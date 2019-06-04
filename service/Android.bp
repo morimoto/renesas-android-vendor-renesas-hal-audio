@@ -1,0 +1,41 @@
+cc_binary {
+    name: "android.hardware.audio@5.0-service.renesas",
+    proprietary: true,
+    relative_install_path: "hw",
+    init_rc: ["android.hardware.audio@5.0-service.renesas.rc"],
+    vintf_fragments: ["android.hardware.audio@5.0-service.renesas.xml"],
+    srcs: [
+        "service.cpp",
+        "Conversions.cpp",
+        "Device.cpp",
+        "DevicesFactory.cpp",
+        "ParametersUtil.cpp",
+        "PrimaryDevice.cpp",
+        "Stream.cpp",
+        "StreamIn.cpp",
+        "StreamOut.cpp",
+    ],
+
+    include_dirs: [
+        "frameworks/av/include",
+        ],
+
+    shared_libs: [
+        "libbase",
+        "libcutils",
+        "libfmq",
+        "libhardware",
+        "libhidlbase",
+        "libhidltransport",
+        "liblog",
+        "libutils",
+        "android.hardware.audio@5.0",
+        "android.hardware.audio.common@5.0",
+        "android.hardware.audio.common@5.0-util",
+        "android.hardware.audio.common-util",
+    ],
+
+    static_libs: [
+        "libmedia_helper",
+    ],
+}
