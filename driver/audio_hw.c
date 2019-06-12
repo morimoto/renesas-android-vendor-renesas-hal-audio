@@ -396,6 +396,10 @@ static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, si
         out->frames_total_buffered = 0;
     }
 
+    // apply gain
+    out_apply_gain(out, buffer, bytes);
+
+    // write to vbuffer
     size_t frames_written = frames;
     if (out->dev->master_mute) {
         ALOGV("%s: ignored due to master mute", __func__);
