@@ -49,7 +49,7 @@ int ringbuffer_init(ringbuffer_t* ringbuffer, size_t size) {
     // extra bit used to distinguish read and write indices when full
     size_t allocated_size = size + 1;
     ringbuffer->data = (int8_t *) calloc(allocated_size, sizeof(int8_t));
-    if(!ringbuffer->data) {
+    if (!ringbuffer->data) {
         return -ENOMEM;
     }
 
@@ -107,7 +107,7 @@ int ringbuffer_write(ringbuffer_t* ringbuffer, const int8_t* data, size_t count)
     const size_t available_write = get_available_write(ringbuffer->allocated_size,
                                                        write_index,
                                                        read_index);
-    if(!available_write) {
+    if (!available_write) {
         // can't write a thing
         return 0;
     } else if (count > available_write) {
@@ -147,10 +147,10 @@ int ringbuffer_read(ringbuffer_t* ringbuffer, int8_t* data, size_t count)
     const size_t available_read = get_available_read(ringbuffer->allocated_size,
                                                      write_index,
                                                      read_index);
-    if(!available_read) {
+    if (!available_read) {
         // can't read a thing
         return 0;
-    } else if(count > available_read) {
+    } else if (count > available_read) {
         // read all we can
         count = available_read;
     }
