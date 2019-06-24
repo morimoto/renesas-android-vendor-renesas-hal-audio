@@ -25,9 +25,8 @@
 #include <tinyalsa/asoundlib.h>
 #include <audio_utils/resampler.h>
 
-#include "ringbuffer.h"
-
 #include "platform/audio_hal_types.h"
+#include "audio_vbuffer.h"
 
 struct generic_audio_device {
   struct audio_hw_device device;  // Constant after init
@@ -36,7 +35,6 @@ struct generic_audio_device {
   bool mic_mute;                // Proteced by this->lock
   struct device_card *device_cards;
   Hashmap *out_bus_stream_map;  // Extended field. Constant after init
-
   audio_mode_t mode;
 };
 
@@ -47,8 +45,7 @@ struct generic_stream_out {
   audio_devices_t device;            // Protected by this->lock
   struct audio_config req_config;    // Constant after init
   struct pcm_config pcm_config;      // Constant after init
-  ringbuffer_t buffer;               // Protected by this->lock
-  void *thread_send_buffer;       // Protected by this->lock
+  audio_vbuffer_t buffer;            // Protected by this->lock
   const char *bus_address;           // Extended field. Constant after init
   struct audio_gain gain_stage;      // Constant after init
   float amplitude_ratio;             // Protected by this->lock
@@ -82,8 +79,7 @@ struct generic_stream_in {
   struct audio_config req_config;    // Constant after init
   struct pcm *pcm;                   // Protected by this->lock
   struct pcm_config pcm_config;      // Constant after init
-  ringbuffer_t buffer;               // Protected by this->lock
-  void *thread_acquire_buffer;       // Protected by this->lock
+  audio_vbuffer_t buffer;            // Protected by this->lock
   const char *bus_address;           // Extended field. Constant after init
 
   // Time & Position Keeping

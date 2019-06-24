@@ -39,6 +39,7 @@ struct ext_pcm {
   pthread_t mixer_thread;
   Hashmap *mixer_pipeline_map;
   bool mixer_exit_flag;
+  pthread_cond_t mixer_wake;
 };
 
 struct ext_pcm *ext_pcm_open(unsigned int card, unsigned int device,

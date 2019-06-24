@@ -21,7 +21,7 @@ cc_defaults {
     srcs: [
         "audio_hw.c",
         "ext_pcm.c",
-        "ringbuffer.c",
+        "audio_vbuffer.c"
     ],
     include_dirs: ["external/tinyalsa/include"],
     shared_libs: [

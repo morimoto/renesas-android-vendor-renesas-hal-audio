@@ -190,7 +190,7 @@ static int open_mixers_by_array(struct device_card *cards)
             return -EINVAL;
         }
     }
-	return 0;
+    return 0;
 }
 
 static void close_mixers_by_array(struct device_card *cards)
@@ -341,7 +341,7 @@ static void *out_write_worker(void *args) {
             close_pcm = true;
         }
 
-        while (!close_pcm && ringbuffer_available_read(&out->buffer) == 0) {
+        while (!close_pcm && audio_vbuffer_live(&out->buffer) == 0) {
             pthread_cond_wait(&out->worker_wake, &out->lock);
             if (out->worker_standby || out->worker_exit) {
                 close_pcm = true;
@@ -389,9 +389,8 @@ static void *out_write_worker(void *args) {
             }
         }
 
-        void *output_buffer;
-        int bytes = ringbuffer_read(&out->buffer, buffer, buffer_size);
-        int frames = ext_pcm_bytes_to_frames(ext_pcm, bytes);
+    void *output_buffer;
+        int frames = audio_vbuffer_read(&out->buffer, buffer, buffer_frames);
 
         if (out->resampler) {
             size_t in_frames_count = frames;
@@ -474,7 +473,7 @@ static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, si
     const size_t frames =  bytes / audio_stream_out_frame_size(stream);
     const size_t format_bytes = pcm_format_to_bits(out->pcm_config.format) >> 3;
 
-    // ALOGD("out_write: bytes %d, frames %d", bytes, frames);
+    ALOGV("out_write: bytes %d, frames %d", bytes, frames);
     pthread_mutex_lock(&out->lock);
 
     if (out->worker_standby) {
@@ -495,7 +494,7 @@ static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, si
         out->frames_total_buffered = 0;
     }
 
-    // apply gain
+    //apply gain
     out_apply_gain(out, buffer, bytes);
 
     // write to vbuffer
@@ -504,25 +503,12 @@ static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, si
         ALOGV("%s: ignored due to master mute", __func__);
     } else {
         const int requested_channels = popcount(out->req_config.channel_mask);
-        int bytes_written;
 
         if (out->pcm_config.channels == requested_channels) {
             // passthrough
-            bytes_written = ringbuffer_write(&out->buffer, buffer, bytes);
-            frames_written = bytes_written / audio_stream_out_frame_size(stream);
+            frames_written = audio_vbuffer_write(&out->buffer, buffer, frames);
         } else {
-            const size_t pcm_frame_size = out->pcm_config.channels * format_bytes;
-            const size_t requested_frame_size = requested_channels * format_bytes;
-
-            // adjust for channel difference
-            size_t bytes_to_write = adjust_channels(buffer, requested_channels,
-                                                    out->thread_send_buffer, out->pcm_config.channels,
-                                                    format_bytes, bytes);
-
-            bytes_written = ringbuffer_write(&out->buffer,
-                                             out->thread_send_buffer,
-                                             bytes_to_write);
-            frames_written = bytes_written / pcm_frame_size;
+            frames_written = audio_vbuffer_write_expand(&out->buffer, buffer, frames, requested_channels);
         }
 
         pthread_cond_signal(&out->worker_wake);
@@ -538,11 +524,7 @@ static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, si
 
     // At the beginning or after an underrun, try to fill up the vbuffer.
     // This will be throttled by the PlaybackThread
-    const size_t ringbuffer_frames = ringbuffer_size(&out->buffer)
-                                     / out->pcm_config.channels * format_bytes;
-    int frames_sleep = out->frames_total_buffered < ringbuffer_frames
-                        ? 0
-                        : frames;
+    int frames_sleep = out->frames_total_buffered < out->buffer.frame_count ? 0 : frames;
     uint64_t sleep_time_us = frames_sleep * 1000000LL /
                             out_get_sample_rate(&stream->common);
 
@@ -913,9 +895,9 @@ static void *in_read_worker(void *args) {
             close_pcm = true;
         }
 
-        while (!close_pcm && ringbuffer_available_read(&in->buffer) == 0) {
+        while (!close_pcm && audio_vbuffer_live(&in->buffer) == 0) {
             pthread_cond_wait(&in->worker_wake, &in->lock);
-            if(in->worker_standby || in->worker_exit) {
+            if (in->worker_standby || in->worker_exit) {
                 close_pcm = true;
             }
         }
@@ -979,22 +961,19 @@ static void *in_read_worker(void *args) {
 
         ALOGV("%s: read %d frames from input pcm", __func__, buffer_frames);
 
-        size_t bytes_written, frames_written;
+        size_t frames_written;
         pthread_mutex_lock(&in->lock);
         if (in->resampler) {
             size_t in_frames_count = buffer_frames;
             size_t out_frames_count = buffer_frames;
             in->resampler->resample_from_input(in->resampler, (int16_t*)buffer, &in_frames_count,
-                                               (int16_t*)in->resampler_buffer, &out_frames_count);
-            bytes_written = ringbuffer_write(&in->buffer, in->resampler_buffer,
-                                             pcm_frames_to_bytes(pcm, out_frames_count));
+                                            (int16_t*)in->resampler_buffer, &out_frames_count);
+            frames_written = audio_vbuffer_write(&in->buffer, in->resampler_buffer, out_frames_count);
         } else {
-            bytes_written = ringbuffer_write(&in->buffer, buffer,
-                                             pcm_frames_to_bytes(pcm, buffer_frames));
-        }
+            frames_written = audio_vbuffer_write(&in->buffer, buffer, buffer_frames);
+        } 
         pthread_mutex_unlock(&in->lock);
 
-        frames_written = pcm_bytes_to_frames(pcm, bytes_written);
         ALOGV("%s: Wrote %d frames to vbuffer", __func__, frames_written);
 
         if (frames_written != buffer_frames) {
@@ -1048,6 +1027,7 @@ static ssize_t in_read(struct audio_stream_in *stream, void *buffer, size_t byte
 
     pthread_mutex_lock(&in->lock);
 
+    int read_frames = 0;
     if (in->standby) {
         ALOGW("Input put to sleep while read in progress");
         goto exit;
@@ -1056,29 +1036,23 @@ static ssize_t in_read(struct audio_stream_in *stream, void *buffer, size_t byte
 
     memset ((uint8_t *)buffer, 0, bytes);
 
-    // TODO: check for overflows
     const int requested_channels = popcount(in->req_config.channel_mask);
 
     if (in->pcm_config.channels == requested_channels) {
-        // passthrough
-        read_bytes = ringbuffer_read(&in->buffer, buffer, bytes);
+        read_frames = audio_vbuffer_read(&in->buffer, buffer, frames);
     } else {
-        const size_t format_bytes = pcm_format_to_bits(in->pcm_config.format) >> 3;
-        int bytes_to_read = frames * in->pcm_config.channels * format_bytes;
-
-        const int read_pcm_bytes = ringbuffer_read(&in->buffer,
-                                                   in->thread_acquire_buffer,
-                                                   bytes_to_read);
-        // adjust for channel difference
-        read_bytes = adjust_channels(in->thread_acquire_buffer, in->pcm_config.channels,
-                                     buffer, requested_channels, format_bytes, read_pcm_bytes);
+        read_frames = audio_vbuffer_read_shrink(&in->buffer, buffer,
+                                            frames, popcount(in->req_config.channel_mask));
     }
 
 exit:
-    ALOGV("%s: Read %d bytes out of %d (%d channels) from vbuffer",
+    read_bytes = read_frames * audio_stream_in_frame_size(stream);
+
+    ALOGV("%s: Read %d frames out of %d (%d bytes, %d channels) from vbuffer",
          __func__,
+         read_frames,
+         frames,
          read_bytes,
-         bytes,
          popcount(in->req_config.channel_mask));
 
     if (mic_mute) {
@@ -1172,21 +1146,14 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
 
     const size_t format_bytes = pcm_format_to_bits(out->pcm_config.format) >> 3;
     const size_t pcm_frame_size = out->pcm_config.channels * format_bytes;
-    const size_t ringbuffer_write_bytes = out->pcm_config.period_size * pcm_frame_size;
-    const size_t ringbuffer_bytes = ringbuffer_write_bytes * out->pcm_config.period_count;
 
-    // init shared buffer
-    ret = ringbuffer_init(&out->buffer, ringbuffer_bytes);
+    ret = audio_vbuffer_init(&out->buffer,
+            out->pcm_config.period_size * out->pcm_config.period_count,
+            format_bytes, out->pcm_config.channels);
     if (ret != 0) {
-        ALOGE("%s: Ringbuffer creation failed: %s", __func__, strerror(ret));
+        ALOGE("%s: audio vbuffer creation failed: %s", __func__, strerror(ret));
         return ret;
     }
-    out->thread_send_buffer = malloc(ringbuffer_write_bytes);
-    if (!out->thread_send_buffer) {
-        ALOGE("%s: thread_send_buffer creation failed", __func__);
-        return -ENOMEM;
-    }
-
     // init resampler if necessary
     if (out->pcm_config.rate != out->req_config.sample_rate) {
         const size_t resampler_buffer_frame_count =
@@ -1200,11 +1167,11 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
         }
 
         ret = create_resampler(out->pcm_config.rate,
-                                out->req_config.sample_rate,
-                                out->pcm_config.channels,
-                                RESAMPLER_QUALITY_DEFAULT,
-                                NULL,
-                                &out->resampler);
+                               out->req_config.sample_rate,
+                               out->pcm_config.channels,
+                               RESAMPLER_QUALITY_DEFAULT,
+                               NULL,
+                               &out->resampler);
         if (ret != 0) {
             ALOGE("%s: Resampler creation failed: %s", __func__, strerror(ret));
             return ret;
@@ -1237,6 +1204,7 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
     *stream_out = &out->stream;
     ALOGD("%s bus:%s", __func__, out->bus_address);
 
+    ALOGD("%s finished", __func__);
     return ret;
 }
 
@@ -1254,7 +1222,7 @@ static void adev_close_output_stream(struct audio_hw_device *dev,
 
     pthread_join(out->worker_thread, NULL);
     pthread_mutex_destroy(&out->lock);
-    ringbuffer_destroy(&out->buffer);
+    audio_vbuffer_destroy(&out->buffer);
 
     if (out->bus_address) {
         hashmapRemove(adev->out_bus_stream_map, out->bus_address);
@@ -1357,7 +1325,7 @@ static void adev_close_input_stream(struct audio_hw_device *dev,
     }
 
     pthread_mutex_destroy(&in->lock);
-    ringbuffer_destroy(&in->buffer);
+    audio_vbuffer_destroy(&in->buffer);
 
     if (in->resampler_buffer) {
         free(in->resampler_buffer);
@@ -1426,11 +1394,12 @@ static int adev_open_input_stream(struct audio_hw_device *dev,
 
     size_t format_bytes = pcm_format_to_bits(in->pcm_config.format) >> 3;
     const size_t pcm_frame_size = in->pcm_config.channels * format_bytes;
-    size_t buffer_bytes; // size should match resampler output
+    size_t buffer_frame_count = 0;
+    size_t buffer_bytes;
 
     // init resampler
     if (in->pcm_config.rate != in->req_config.sample_rate) {
-        size_t buffer_frame_count = (in->pcm_config.rate * in->pcm_config.period_size)
+        buffer_frame_count = (in->pcm_config.rate * in->pcm_config.period_size)
                                     / in->req_config.sample_rate;
         buffer_bytes = buffer_frame_count * pcm_frame_size;
 
@@ -1453,20 +1422,15 @@ static int adev_open_input_stream(struct audio_hw_device *dev,
     } else {
         in->resampler = NULL;
         in->resampler_buffer = NULL;
-        buffer_bytes = in->pcm_config.period_size * pcm_frame_size;
+        buffer_frame_count = in->pcm_config.period_size;
     }
 
-    size_t ringbuffer_bytes = buffer_bytes * in->pcm_config.period_count;
-
-    ret = ringbuffer_init(&in->buffer, ringbuffer_bytes);
+    ret = audio_vbuffer_init(&in->buffer,
+            buffer_frame_count * in->pcm_config.period_count,
+            format_bytes, in->pcm_config.channels);
     if (ret != 0) {
-        ALOGE("%s: Ringbuffer creation failed: %s", __func__, strerror(ret));
+        ALOGE("%s: audio_vbuffer creation failed: %s", __func__, strerror(ret));
         return ret;
-    }
-    in->thread_acquire_buffer = malloc(buffer_bytes);
-    if (!in->thread_acquire_buffer) {
-        ALOGE("%s: thread_acquire_buffer creation failed", __func__);
-        return -ENOMEM;
     }
 
     pthread_cond_init(&in->worker_wake, NULL);
