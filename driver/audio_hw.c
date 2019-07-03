@@ -48,9 +48,6 @@
 // device specific definitions
 #include "platform_dependencies.h"
 
-#define PCM_CARD 0
-#define PCM_DEVICE 0
-
 #define OUT_PERIOD_MS 15
 #define OUT_PERIOD_COUNT 4
 
@@ -60,12 +57,33 @@
 #define IN_PERIOD_SIZE 512
 
 // defined externally
-#ifndef OUT_CHANNELS
-#define OUT_CHANNELS 8
-#endif // OUT_CHANNELS
-#ifndef IN_CHANNELS
-#define IN_CHANNELS 6
-#endif // IN_CHANNELS
+#ifndef OUT_CHANNELS_DEFAULT
+#define OUT_CHANNELS_DEFAULT 8
+#endif // OUT_CHANNELS_DEFAULT
+
+#ifndef IN_CHANNELS_DEFAULT
+#define IN_CHANNELS_DEFAULT 6
+#endif // IN_CHANNELS_DEFAULT
+
+#ifndef IN_CHANNELS_FM
+#define IN_CHANNELS_FM 2
+#endif // IN_CHANNELS_DEFAULT
+
+#ifndef PCM_CARD_DEFAULT
+#define PCM_CARD_DEFAULT 0
+#endif // PCM_CARD_DEFAULT
+
+#ifndef PCM_DEVICE_DEFAULT
+#define PCM_DEVICE_DEFAULT 0
+#endif // PCM_DEVICE_DEFAULT
+
+#ifndef PCM_CARD_FM
+#define PCM_CARD_FM -1
+#endif // PCM_CARD_FM
+
+#ifndef PCM_DEVICE_FM
+#define PCM_DEVICE_FM -1
+#endif // PCM_DEVICE_FM
 
 #define PTHREAD_MUTEX_LOCK(lock) \
     pthread_mutex_lock(lock);
@@ -73,13 +91,12 @@
 #define PTHREAD_MUTEX_UNLOCK(lock) \
     pthread_mutex_unlock(lock);
 
-
 #define _bool_str(x) ((x)?"true":"false")
 
 static int adev_get_mic_mute(const struct audio_hw_device *dev, bool *state);
 
-static struct pcm_config pcm_config_out = {
-    .channels = OUT_CHANNELS,
+static struct pcm_config pcm_config_out_default = {
+    .channels = OUT_CHANNELS_DEFAULT,
     .rate = 48000,
     .period_size = OUT_PERIOD_SIZE,
     .period_count = OUT_PERIOD_COUNT,
@@ -87,14 +104,22 @@ static struct pcm_config pcm_config_out = {
 //    .start_threshold = 0,
 };
 
-static struct pcm_config pcm_config_in = {
-    .channels = IN_CHANNELS,
+static struct pcm_config pcm_config_in_default = {
+    .channels = IN_CHANNELS_DEFAULT,
     .rate = 48000,
     .period_size = IN_PERIOD_SIZE,
     .period_count = IN_PERIOD_COUNT,
     .format = PCM_FORMAT_S16_LE,
 //    .start_threshold = 0,
 //    .stop_threshold = INT_MAX,
+};
+
+static struct pcm_config pcm_config_in_fm = {
+    .channels = IN_CHANNELS_FM,
+    .rate = 48000,
+    .period_size = IN_PERIOD_SIZE,
+    .period_count = IN_PERIOD_COUNT,
+    .format = PCM_FORMAT_S16_LE,
 };
 
 static pthread_mutex_t adev_init_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -106,6 +131,81 @@ typedef struct {
 } patch_list;
 
 struct listnode* patch_head = NULL;
+
+static int set_route_by_array(struct mixer *mixer, struct route_setting *route,
+                              int enable)
+{
+    struct mixer_ctl *ctl;
+    unsigned int i, j;
+
+    /* Go through the route array and set each value */
+    i = 0;
+    while (route[i].ctl_name) {
+        ctl = mixer_get_ctl_by_name(mixer, route[i].ctl_name);
+        if (!ctl)
+            return -EINVAL;
+
+        if (route[i].strval) {
+            if (enable)
+                mixer_ctl_set_enum_by_string(ctl, route[i].strval);
+            else
+                mixer_ctl_set_enum_by_string(ctl, "Off");
+        } else {
+            /* This ensures multiple (i.e. stereo) values are set jointly */
+            for (j = 0; j < mixer_ctl_get_num_values(ctl); j++) {
+                if (enable)
+                    mixer_ctl_set_value(ctl, j, route[i].intval);
+                else
+                    mixer_ctl_set_value(ctl, j, 0);
+            }
+        }
+        i++;
+    }
+
+    return 0;
+}
+
+static int open_mixers_by_array(struct device_card *cards)
+{
+    //unsigned int counter = 0;
+    if (!cards) {
+        return -EINVAL;
+    }
+    for (unsigned int counter = 0; cards[counter].card != -1; counter++) {
+        cards[counter].mixer = mixer_open(cards[counter].card);
+        if (!cards[counter].mixer) {
+            ALOGE("Unable to open the mixer for card %d, aborting.", cards[counter].card);
+            for (unsigned int close_counter = 0; close_counter < counter; close_counter++) {
+                mixer_close(cards[close_counter].mixer);
+                cards[close_counter].mixer = 0;
+            }
+            return -EINVAL;
+        }
+        if (set_route_by_array(cards[counter].mixer, cards[counter].defaults, 1) != 0) {
+            ALOGE("Unable to set the route for card %d, aborting.", cards[counter].card);
+            for (unsigned int close_counter = 0; close_counter < counter; close_counter++) {
+                mixer_close(cards[close_counter].mixer);
+                cards[close_counter].mixer = 0;
+            }
+            return -EINVAL;
+        }
+    }
+	return 0;
+}
+
+static void close_mixers_by_array(struct device_card *cards)
+{
+    unsigned int counter = 0;
+    if (!cards) {
+        return;
+    }
+    while (cards[counter].card != -1) {
+        if (cards[counter].mixer) {
+            mixer_close(cards[counter].mixer);
+            cards[counter].mixer = 0;
+        }
+    }
+}
 
 static uint32_t out_get_sample_rate(const struct audio_stream *stream) {
     struct generic_stream_out *out = (struct generic_stream_out *)stream;
@@ -266,7 +366,7 @@ static void *out_write_worker(void *args) {
         }
 
         if (!ext_pcm) {
-            ext_pcm = ext_pcm_open(PCM_CARD, PCM_DEVICE,
+            ext_pcm = ext_pcm_open(PCM_CARD_DEFAULT, PCM_DEVICE_DEFAULT,
                     PCM_OUT | PCM_MONOTONIC, &out->pcm_config);
             if (!ext_pcm_is_ready(ext_pcm)) {
                 ALOGE("pcm_open(out) failed: %s: address %s channels %d format %d rate %d period size %d",
@@ -847,7 +947,15 @@ static void *in_read_worker(void *args) {
 
         if (!pcm) {
             ALOGD("%s: opening input pcm", __func__);
-            pcm = pcm_open(PCM_CARD, PCM_DEVICE, PCM_IN, &in->pcm_config);
+            unsigned int card, device;
+            if (in->device == AUDIO_DEVICE_IN_FM_TUNER) {
+                card = PCM_CARD_FM;
+                device = PCM_DEVICE_FM;
+            } else {
+                card = PCM_CARD_DEFAULT;
+                device = PCM_DEVICE_DEFAULT;
+            }
+            pcm = pcm_open(card, device, PCM_IN, &in->pcm_config);
             if (!pcm_is_ready(pcm)) {
                 ALOGE("pcm_open(in) failed: %s: channels %d format %d rate %d period size %d",
                         pcm_get_error(pcm),
@@ -1056,7 +1164,7 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
     out->dev = adev;
     out->device = devices;
     memcpy(&out->req_config, config, sizeof(struct audio_config));
-    memcpy(&out->pcm_config, &pcm_config_out, sizeof(struct pcm_config));
+    memcpy(&out->pcm_config, &pcm_config_out_default, sizeof(struct pcm_config));
     //out->pcm_config.rate = config->sample_rate;
 
     out->standby = true;
@@ -1270,8 +1378,8 @@ static void adev_close_input_stream(struct audio_hw_device *dev,
 
 static int adev_open_input_stream(struct audio_hw_device *dev,
         audio_io_handle_t handle, audio_devices_t devices, struct audio_config *config,
-        struct audio_stream_in **stream_in, audio_input_flags_t flags __unused, const char *address,
-        audio_source_t source __unused) {
+        struct audio_stream_in **stream_in, audio_input_flags_t flags, const char *address,
+        audio_source_t source) {
     struct generic_audio_device *adev = (struct generic_audio_device *)dev;
     struct generic_stream_in *in;
     int ret = 0;
@@ -1308,7 +1416,11 @@ static int adev_open_input_stream(struct audio_hw_device *dev,
     in->dev = adev;
     in->device = devices;
     memcpy(&in->req_config, config, sizeof(struct audio_config));
-    memcpy(&in->pcm_config, &pcm_config_in, sizeof(struct pcm_config));
+    if (in->device == AUDIO_DEVICE_IN_FM_TUNER) {
+        memcpy(&in->pcm_config, &pcm_config_in_fm, sizeof(struct pcm_config));
+    } else {
+        memcpy(&in->pcm_config, &pcm_config_in_default, sizeof(struct pcm_config));
+    }
     //in->pcm_config.rate = config->sample_rate;
     //in->pcm_config.period_size = in->pcm_config.rate*IN_PERIOD_MS/1000;
 
@@ -1486,8 +1598,8 @@ static int adev_close(hw_device_t *dev) {
     }
 
     if ((--audio_device_ref_count) == 0) {
-        if (adev->mixer) {
-            mixer_close(adev->mixer);
+        if (adev->device_cards) {
+            close_mixers_by_array(adev->device_cards);
         }
         if (adev->out_bus_stream_map) {
             hashmapFree(adev->out_bus_stream_map);
@@ -1519,39 +1631,6 @@ static int str_hash_fn(void *str) {
         hash = ((hash << 5) + hash) + *p;
     }
     return (int)hash;
-}
-
-static int set_route_by_array(struct mixer *mixer, struct route_setting *route,
-                              int enable)
-{
-    struct mixer_ctl *ctl;
-    unsigned int i, j;
-
-    /* Go through the route array and set each value */
-    i = 0;
-    while (route[i].ctl_name) {
-        ctl = mixer_get_ctl_by_name(mixer, route[i].ctl_name);
-        if (!ctl)
-            return -EINVAL;
-
-        if (route[i].strval) {
-            if (enable)
-                mixer_ctl_set_enum_by_string(ctl, route[i].strval);
-            else
-                mixer_ctl_set_enum_by_string(ctl, "Off");
-        } else {
-            /* This ensures multiple (i.e. stereo) values are set jointly */
-            for (j = 0; j < mixer_ctl_get_num_values(ctl); j++) {
-                if (enable)
-                    mixer_ctl_set_value(ctl, j, route[i].intval);
-                else
-                    mixer_ctl_set_value(ctl, j, 0);
-            }
-        }
-        i++;
-    }
-
-    return 0;
 }
 
 static int adev_open(const hw_module_t *module,
@@ -1604,15 +1683,13 @@ static int adev_open(const hw_module_t *module,
     *device = &adev->device.common;
 
     //common version
-    adev->mixer = mixer_open(CARD_GEN3_DEFAULT);
-
-    if (!adev->mixer) {
+    adev->device_cards = cards;
+    if (open_mixers_by_array(adev->device_cards) != 0) {
         free(adev);
-        ALOGE("Unable to open the pcm3168 mixer, aborting.");
+        ALOGE("Unable to open and setup some mixers, aborting.");
         return -EINVAL;
     }
 
-    set_route_by_array(adev->mixer, defaults, 1);
     adev->mode = AUDIO_MODE_NORMAL;
 
     // Initialize the bus address to output stream map

@@ -1,6 +1,8 @@
 #ifndef PLATFORM_DEPENDENCIES_H
 #define PLATFORM_DEPENDENCIES_H
 
+#include "../audio_hal_types.h"
+
 #define MIXER_PLAY_VOL_CTRL_TYPE    "DAC Volume Control Type"
 #define MIXER_PLAY_VOL_MASTER       "Master Playback Volume"
 #define MIXER_PLAY_VOL_DAC1         "DAC1 Playback Volume"
@@ -26,18 +28,19 @@
 #define MIXER_DVC_IN_CAP_VOL_DEF    2200000
 
 /* ALSA cards for GEN3 */
-#define CARD_GEN3                 0
-#define CARD_GEN3_DEFAULT         CARD_GEN3
+#define PCM_CARD_GEN3             0
+#define PCM_DEVICE_GEN3           0
+#define PCM_CARD_DEFAULT          PCM_CARD_GEN3
+#define PCM_DEVICE_DEFAULT        PCM_DEVICE_GEN3
 
-#define IN_CHANNELS 6
-#define OUT_CHANNELS 8
+#define PCM_CARD_GEN3_FM          2
+#define PCM_DEVICE_GEN3_FM        0
+#define PCM_CARD_FM               PCM_CARD_GEN3_FM
+#define PCM_DEVICE_FM             PCM_DEVICE_GEN3_FM
 
-struct route_setting
-{
-    const char *    ctl_name;
-    int             intval;
-    const char *    strval;
-};
+#define IN_CHANNELS_DEFAULT 6
+#define OUT_CHANNELS_DEFAULT 8
+#define IN_CHANNELS_FM 2
 
 /* These are values that never change */
 struct route_setting defaults[] = {
@@ -101,6 +104,22 @@ struct route_setting defaultsfm[] = {
 
     /* end of list */
     { .ctl_name = NULL, },
+};
+
+struct device_card cards[] = {
+    {
+        .card = PCM_CARD_GEN3,
+		.defaults = defaults,
+		.mixer = 0,
+    },
+    {
+        .card = PCM_CARD_GEN3_FM,
+		.defaults = defaultsfm,
+		.mixer = 0,
+    },
+	{
+        .card = -1,
+    }
 };
 
 #endif

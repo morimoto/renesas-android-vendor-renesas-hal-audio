@@ -1,6 +1,8 @@
 #ifndef PLATFORM_DEPENDENCIES_H
 #define PLATFORM_DEPENDENCIES_H
 
+#include "../audio_hal_types.h"
+
 #define MIXER_PLAY_VOL              "DVC Out Playback Volume"
 #define MIXER_CAPTURE_VOL           "DVC In Capture Volume"
 
@@ -13,19 +15,15 @@
 #define MIXER_MAXIMUM_LPCM_CHANNELS "Maximum LPCM channels"
 
 /* ALSA cards for GEN3 */
-#define CARD_GEN3                 0
-#define CARD_GEN3_HDMI            1
-#define CARD_GEN3_DEFAULT         CARD_GEN3
+#define PCM_CARD_GEN3             0
+#define PCM_DEVICE_GEN3           0
+#define PCM_CARD_GEN3_HDMI        1
 
-#define IN_CHANNELS 2
-#define OUT_CHANNELS 2
+#define PCM_CARD_DEFAULT          PCM_CARD_GEN3
+#define PCM_DEVICE_DEFAULT        PCM_DEVICE_GEN3
 
-struct route_setting
-{
-    const char *    ctl_name;
-    int             intval;
-    const char *    strval;
-};
+#define IN_CHANNELS_DEFAULT 2
+#define OUT_CHANNELS_DEFAULT 2
 
 struct route_setting defaults[] = {
     /* general */
@@ -40,6 +38,17 @@ struct route_setting defaults[] = {
     {
         .ctl_name = NULL,
     },
+};
+
+struct device_card cards[] = {
+    {
+        .card = PCM_CARD_GEN3,
+		.defaults = defaults,
+		.mixer = 0,
+    },
+	{
+        .card = -1,
+    }
 };
 
 #endif
