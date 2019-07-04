@@ -44,7 +44,7 @@ struct ext_pcm {
 
 struct ext_pcm *ext_pcm_open(unsigned int card, unsigned int device,
                              unsigned int flags, struct pcm_config *config);
-int ext_pcm_close(struct ext_pcm *ext_pcm);
+int ext_pcm_close(struct ext_pcm *ext_pcm, const char *bus_address);
 int ext_pcm_is_ready(struct ext_pcm *ext_pcm);
 int ext_pcm_write(struct ext_pcm *ext_pcm, const char *bus_address,
                   const void *data, unsigned int count);

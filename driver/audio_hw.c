@@ -350,7 +350,7 @@ static void *out_write_worker(void *args) {
 
         if (close_pcm) {
             if (ext_pcm) {
-                ext_pcm_close(ext_pcm); // Frees pcm
+                ext_pcm_close(ext_pcm, out->bus_address); // Frees pcm
                 ext_pcm = NULL;
                 free(buffer);
                 buffer=NULL;

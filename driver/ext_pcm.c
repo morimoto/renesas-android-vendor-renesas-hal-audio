@@ -52,6 +52,16 @@ static int str_hash_fn(void *str) {
   return (int)hash;
 }
 
+static bool check_mixer_buffers(__unused void *key, void *value, void *context) {
+  struct ext_mixer_pipeline *pipeline = (struct ext_mixer_pipeline *)value;
+  int *counter = (int *)context;
+
+  if (pipeline->position > 0) {
+    ++(*counter);
+  }
+  return true;
+}
+
 static bool mixer_thread_mix(__unused void *key, void *value, void *context) {
   struct ext_mixer_pipeline *pipeline_out = (struct ext_mixer_pipeline *)context;
   struct ext_mixer_pipeline *pipeline_in = (struct ext_mixer_pipeline *)value;
@@ -104,7 +114,14 @@ static int mixer_pipeline_write(struct ext_pcm *ext_pcm, const char *bus_address
     pipeline->position += int16Count;
   }
   pthread_mutex_unlock(&ext_pcm->mixer_lock);
-  pthread_cond_signal(&ext_pcm->mixer_wake);
+
+  int filled_buffers = 0;
+  hashmapForEach(ext_pcm->mixer_pipeline_map, check_mixer_buffers,
+        &filled_buffers);
+
+  if (filled_buffers == ext_pcm->ref_count) {
+    pthread_cond_signal(&ext_pcm->mixer_wake);
+  }
   return 0;
 }
 
@@ -120,6 +137,7 @@ struct ext_pcm *ext_pcm_open(unsigned int card, unsigned int device,
     pthread_create(&shared_ext_pcm->mixer_thread, (const pthread_attr_t *)NULL,
             mixer_thread_loop, shared_ext_pcm);
     shared_ext_pcm->mixer_pipeline_map = hashmapCreate(8, str_hash_fn, str_eq);
+    shared_ext_pcm->ref_count = 0;
   }
   pthread_mutex_unlock(&ext_pcm_init_lock);
 
@@ -137,27 +155,30 @@ static bool mixer_free_pipeline(__unused void *key, void *value, void *context) 
   return true;
 }
 
-int ext_pcm_close(struct ext_pcm *ext_pcm) {
+int ext_pcm_close(struct ext_pcm *ext_pcm, const char *bus_address) {
   if (ext_pcm == NULL || ext_pcm->pcm == NULL) {
     return -EINVAL;
   }
 
   pthread_mutex_lock(&ext_pcm->lock);
   ext_pcm->ref_count -= 1;
-  ext_pcm->mixer_exit_flag = true;
-  pthread_cond_signal(&ext_pcm->mixer_wake);
+  hashmapRemove(ext_pcm->mixer_pipeline_map, bus_address);
   pthread_mutex_unlock(&ext_pcm->lock);
 
   pthread_mutex_lock(&ext_pcm_init_lock);
   if (ext_pcm->ref_count <= 0) {
-    pthread_mutex_destroy(&ext_pcm->lock);
+    pthread_mutex_lock(&ext_pcm->lock);
+    ext_pcm->mixer_exit_flag = true;
+    pthread_cond_signal(&ext_pcm->mixer_wake);
+    pthread_mutex_unlock(&ext_pcm->lock);
     pcm_close(ext_pcm->pcm);
-    pthread_mutex_destroy(&ext_pcm->mixer_lock);
     hashmapForEach(ext_pcm->mixer_pipeline_map, mixer_free_pipeline,
         (void *)NULL);
     hashmapFree(ext_pcm->mixer_pipeline_map);
     pthread_join(ext_pcm->mixer_thread, NULL);
     pthread_cond_destroy(&ext_pcm->mixer_wake);
+    pthread_mutex_destroy(&ext_pcm->mixer_lock);
+    pthread_mutex_destroy(&ext_pcm->lock);
     free(ext_pcm);
     shared_ext_pcm = NULL;
   }
