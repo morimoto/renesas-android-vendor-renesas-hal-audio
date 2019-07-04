@@ -20,7 +20,7 @@
 
 /* GEN3 mixer values */
 #define MIXER_PLAY_V_MASTER_DEF     180
-#define MIXER_PLAY_V_DAC_DEF        192
+#define MIXER_PLAY_V_DAC_DEF        160
 
 #define MIXER_CAP_V_MASTER_DEF      230
 #define MIXER_CAP_V_ADC_DEF         230
