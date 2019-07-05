@@ -171,7 +171,7 @@ static int open_mixers_by_array(struct device_card *cards)
     if (!cards) {
         return -EINVAL;
     }
-    for (unsigned int counter = 0; cards[counter].card != -1; counter++) {
+    for (unsigned int counter = 0; cards[counter].card != UINT32_MAX; counter++) {
         cards[counter].mixer = mixer_open(cards[counter].card);
         if (!cards[counter].mixer) {
             ALOGE("Unable to open the mixer for card %d, aborting.", cards[counter].card);
@@ -199,7 +199,7 @@ static void close_mixers_by_array(struct device_card *cards)
     if (!cards) {
         return;
     }
-    while (cards[counter].card != -1) {
+    while (cards[counter].card != UINT32_MAX) {
         if (cards[counter].mixer) {
             mixer_close(cards[counter].mixer);
             cards[counter].mixer = 0;

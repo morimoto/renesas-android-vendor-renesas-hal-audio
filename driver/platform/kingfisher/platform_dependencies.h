@@ -109,16 +109,16 @@ struct route_setting defaultsfm[] = {
 struct device_card cards[] = {
     {
         .card = PCM_CARD_GEN3,
-		.defaults = defaults,
-		.mixer = 0,
+        .defaults = defaults,
+        .mixer = 0,
     },
     {
         .card = PCM_CARD_GEN3_FM,
-		.defaults = defaultsfm,
-		.mixer = 0,
+        .defaults = defaultsfm,
+        .mixer = 0,
     },
-	{
-        .card = -1,
+    {
+        .card = UINT32_MAX,
     }
 };
 
