@@ -585,20 +585,6 @@ static void do_out_standby(struct generic_stream_out *out) {
     if (out->standby) {
         return;
     }
-    while (true) {
-        get_current_output_position(out, &out->underrun_position, NULL);
-        frames_sleep = out->frames_written - out->underrun_position;
-        if (frames_sleep == 0) {
-            break;
-        }
-
-        sleep_time_us = frames_sleep * 1000000LL /
-                        out_get_sample_rate(&out->stream.common);
-
-        pthread_mutex_unlock(&out->lock);
-        usleep(sleep_time_us);
-        pthread_mutex_lock(&out->lock);
-    }
     out->worker_standby = true;
     out->standby = true;
     pthread_cond_signal(&out->worker_wake);
