@@ -38,9 +38,21 @@
 #define PCM_CARD_FM               PCM_CARD_GEN3_FM
 #define PCM_DEVICE_FM             PCM_DEVICE_GEN3_FM
 
+#define PCM_CARD_GEN3_HFP         3
+#define PCM_DEVICE_GEN3_HFP       0
+#define PCM_CARD_HFP              PCM_CARD_GEN3_HFP
+#define PCM_DEVICE_HFP            PCM_DEVICE_GEN3_HFP
+
 #define IN_CHANNELS_DEFAULT 6
 #define OUT_CHANNELS_DEFAULT 8
 #define IN_CHANNELS_FM 2
+#define IN_CHANNELS_HFP 2
+#define OUT_CHANNELS_HFP 2
+
+#define DEFAULT_OUT_SAMPLING_RATE   48000
+#define DEFAULT_IN_SAMPLING_RATE    48000
+
+#define DEFAULT_HFP_SAMPLING_RATE   16000
 
 /* These are values that never change */
 struct route_setting defaults[] = {

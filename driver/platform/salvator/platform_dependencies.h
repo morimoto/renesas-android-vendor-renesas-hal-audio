@@ -25,6 +25,9 @@
 #define IN_CHANNELS_DEFAULT 2
 #define OUT_CHANNELS_DEFAULT 2
 
+#define DEFAULT_OUT_SAMPLING_RATE   48000
+#define DEFAULT_IN_SAMPLING_RATE    48000
+
 struct route_setting defaults[] = {
     /* general */
     {

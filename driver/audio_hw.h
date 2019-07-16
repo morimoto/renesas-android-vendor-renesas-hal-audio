@@ -28,6 +28,16 @@
 #include "platform/audio_hal_types.h"
 #include "audio_vbuffer.h"
 
+struct hfp_call {
+    struct generic_stream_in *mic_input;
+    struct generic_stream_in *hfp_input;
+    struct generic_stream_out *hfp_output;
+
+    unsigned int hfp_volume;
+
+    uint8_t stream_flag;
+};
+
 struct generic_audio_device {
   struct audio_hw_device device;  // Constant after init
   pthread_mutex_t lock;
@@ -36,6 +46,11 @@ struct generic_audio_device {
   struct device_card *device_cards;
   Hashmap *out_bus_stream_map;  // Extended field. Constant after init
   audio_mode_t mode;
+
+  struct generic_stream_out *bus_stream_out;
+  struct hfp_call hfp_call;
+
+  int64_t sleep_ms;
 };
 
 struct generic_stream_out {

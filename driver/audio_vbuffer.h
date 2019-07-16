@@ -58,13 +58,13 @@ size_t audio_vbuffer_read(audio_vbuffer_t *audio_vbuffer, void *buffer,
 // Write to vbuffer with frame duplication
 // Example: in case of 2 channel (stereo) input buffer and 8 channel vbuffer
 // this function will duplicate input buffer frames 4 times for each input frame.
-size_t audio_vbuffer_write_expand(audio_vbuffer_t *audio_vbuffer, const void *buffer,
+size_t audio_vbuffer_write_adjust(audio_vbuffer_t *audio_vbuffer, const void *buffer,
                                   size_t frame_count, size_t input_channels);
 
 // Read from vbuffer with discard
 // Example: in case of 2 channel (stereo) output buffer and 6 channel vbuffer
 // this function will discard last 4 vbuffer channels for each output frame.
-size_t audio_vbuffer_read_shrink(audio_vbuffer_t *audio_vbuffer, void *buffer,
+size_t audio_vbuffer_read_adjust(audio_vbuffer_t *audio_vbuffer, void *buffer,
                                  size_t frame_count, size_t output_channels);
 
 #endif  // AUDIO_VBUFFER_H

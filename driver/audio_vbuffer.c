@@ -70,7 +70,6 @@ int audio_vbuffer_init(audio_vbuffer_t *audio_vbuffer, size_t frame_count,
   audio_vbuffer->head = 0;
   audio_vbuffer->tail = 0;
   audio_vbuffer->live = 0;
-
   pthread_mutex_init(&audio_vbuffer->lock, (const pthread_mutexattr_t *)NULL);
   return 0;
 }
@@ -166,7 +165,7 @@ size_t audio_vbuffer_read(audio_vbuffer_t *audio_vbuffer, void *buffer,
   pthread_mutex_unlock(&audio_vbuffer->lock);
   return frames_read;
 }
-size_t audio_vbuffer_write_expand(audio_vbuffer_t *audio_vbuffer, const void *buffer,
+size_t audio_vbuffer_write_adjust(audio_vbuffer_t *audio_vbuffer, const void *buffer,
                                   size_t frame_count, const size_t input_channels) {
   size_t frames_written = 0;
   pthread_mutex_lock(&audio_vbuffer->lock);
@@ -185,7 +184,8 @@ size_t audio_vbuffer_write_expand(audio_vbuffer_t *audio_vbuffer, const void *bu
           __func__, input_channels, audio_vbuffer->channels, frames, frames_written);
     size_t vbuffer_start = audio_vbuffer->head * audio_vbuffer->frame_size;
     size_t buffer_start = frames_written * audio_vbuffer->frame_size;
-    audio_buffer_expand(audio_vbuffer->data + vbuffer_start, audio_vbuffer->channels,
+
+    audio_buffer_adjust(audio_vbuffer->data + vbuffer_start, audio_vbuffer->channels,
                         (uint8_t *)buffer + buffer_start, input_channels,
                         frames, audio_vbuffer->format_bytes);
 
@@ -199,7 +199,7 @@ size_t audio_vbuffer_write_expand(audio_vbuffer_t *audio_vbuffer, const void *bu
   return frames_written;
 }
 
-size_t audio_vbuffer_read_shrink(audio_vbuffer_t *audio_vbuffer, void *buffer,
+size_t audio_vbuffer_read_adjust(audio_vbuffer_t *audio_vbuffer, void *buffer,
                                  size_t frame_count, size_t output_channels) {
   size_t frames_read = 0;
   pthread_mutex_lock(&audio_vbuffer->lock);
@@ -218,7 +218,8 @@ size_t audio_vbuffer_read_shrink(audio_vbuffer_t *audio_vbuffer, void *buffer,
           __func__, audio_vbuffer->channels, output_channels, frames, frames_read);
     size_t vbuffer_start = audio_vbuffer->tail * audio_vbuffer->frame_size;
     size_t buffer_start = frames_read * audio_vbuffer->frame_size;
-    audio_buffer_shrink((uint8_t *)buffer + buffer_start, output_channels,
+
+    audio_buffer_adjust((uint8_t *)buffer + buffer_start, output_channels,
                         audio_vbuffer->data + vbuffer_start, audio_vbuffer->channels,
                         frames, audio_vbuffer->format_bytes);
 

@@ -42,7 +42,9 @@ struct ext_pcm {
   pthread_cond_t mixer_wake;
 };
 
-struct ext_pcm *ext_pcm_open(unsigned int card, unsigned int device,
+struct ext_pcm *ext_pcm_open_default(unsigned int card, unsigned int device,
+                             unsigned int flags, struct pcm_config *config);
+struct ext_pcm *ext_pcm_open_hfp(unsigned int card, unsigned int device,
                              unsigned int flags, struct pcm_config *config);
 int ext_pcm_close(struct ext_pcm *ext_pcm, const char *bus_address);
 int ext_pcm_is_ready(struct ext_pcm *ext_pcm);

@@ -57,4 +57,21 @@ inline void audio_buffer_expand(void *out_buffer, const size_t out_channels,
     }
 }
 
+inline void audio_buffer_adjust(void *out_buffer, const size_t out_channels,
+                                const void *in_buffer, const size_t in_channels,
+                                const size_t frame_count, const size_t format_bytes)
+{
+    if (in_channels < out_channels) {
+        audio_buffer_expand(out_buffer, out_channels,
+                            in_buffer, in_channels,
+                            frame_count, format_bytes);
+    } else if (in_channels > out_channels) {
+        audio_buffer_shrink(out_buffer, out_channels,
+                            in_buffer, in_channels,
+                            frame_count, format_bytes);
+    } else {
+        memcpy(out_buffer, in_buffer, frame_count * in_channels * format_bytes);
+    }
+}
+
 #endif

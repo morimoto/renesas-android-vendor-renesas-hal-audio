@@ -125,7 +125,7 @@ static int mixer_pipeline_write(struct ext_pcm *ext_pcm, const char *bus_address
   return 0;
 }
 
-struct ext_pcm *ext_pcm_open(unsigned int card, unsigned int device,
+struct ext_pcm *ext_pcm_open_default(unsigned int card, unsigned int device,
                              unsigned int flags, struct pcm_config *config) {
   pthread_mutex_lock(&ext_pcm_init_lock);
   if (shared_ext_pcm == NULL) {
@@ -147,6 +147,30 @@ struct ext_pcm *ext_pcm_open(unsigned int card, unsigned int device,
   pthread_mutex_unlock(&shared_ext_pcm->lock);
 
   return shared_ext_pcm;
+}
+
+struct ext_pcm *ext_pcm_open_hfp(unsigned int card, unsigned int device,
+                             unsigned int flags, struct pcm_config *config) {
+
+  struct ext_pcm *ext_pcm = NULL;
+  pthread_mutex_lock(&ext_pcm_init_lock);
+
+  ext_pcm = calloc(1, sizeof(struct ext_pcm));
+  pthread_mutex_init(&ext_pcm->lock, (const pthread_mutexattr_t *) NULL);
+  ext_pcm->pcm = pcm_open(card, device, flags, config);
+  pthread_mutex_init(&ext_pcm->mixer_lock, (const pthread_mutexattr_t *)NULL);
+  pthread_cond_init(&ext_pcm->mixer_wake, NULL);
+  pthread_create(&ext_pcm->mixer_thread, (const pthread_attr_t *)NULL,
+          mixer_thread_loop, ext_pcm);
+  ext_pcm->mixer_pipeline_map = hashmapCreate(1, str_hash_fn, str_eq);
+  ext_pcm->ref_count = 1;
+  pthread_mutex_unlock(&ext_pcm_init_lock);
+
+  pthread_mutex_lock(&ext_pcm->lock);
+  ext_pcm->mixer_exit_flag = false;
+  pthread_mutex_unlock(&ext_pcm->lock);
+
+  return ext_pcm;
 }
 
 static bool mixer_free_pipeline(__unused void *key, void *value, void *context) {
@@ -179,8 +203,9 @@ int ext_pcm_close(struct ext_pcm *ext_pcm, const char *bus_address) {
     pthread_cond_destroy(&ext_pcm->mixer_wake);
     pthread_mutex_destroy(&ext_pcm->mixer_lock);
     pthread_mutex_destroy(&ext_pcm->lock);
+    if (ext_pcm == shared_ext_pcm)
+      shared_ext_pcm = NULL;
     free(ext_pcm);
-    shared_ext_pcm = NULL;
   }
   pthread_mutex_unlock(&ext_pcm_init_lock);
   return 0;
