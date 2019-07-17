@@ -365,6 +365,11 @@ static void *out_write_worker(void *args) {
             pthread_cond_wait(&out->worker_wake, &out->lock);
         }
 
+        if (out->worker_exit) {
+            pthread_mutex_unlock(&out->lock);
+            break;
+        }
+
         if (!ext_pcm) {
             ext_pcm = ext_pcm_open(PCM_CARD_DEFAULT, PCM_DEVICE_DEFAULT,
                     PCM_OUT | PCM_MONOTONIC, &out->pcm_config);
@@ -905,6 +910,11 @@ static void *in_read_worker(void *args) {
 
             close_pcm = false;
             pthread_cond_wait(&in->worker_wake, &in->lock);
+        }
+
+        if (in->worker_exit) {
+            pthread_mutex_unlock(&in->lock);
+            break;
         }
 
         if (!pcm) {
