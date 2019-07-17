@@ -399,7 +399,7 @@ static void *out_write_worker(void *args) {
 
         if (out->resampler) {
             size_t in_frames_count = frames;
-            size_t out_frames_count = frames;
+            size_t out_frames_count = (frames * out->req_config.sample_rate) / out->pcm_config.rate;
             out->resampler->resample_from_input(out->resampler, (int16_t*)buffer, &in_frames_count,
                                                (int16_t*)out->resampler_buffer, &out_frames_count);
             output_buffer = out->resampler_buffer;
@@ -957,17 +957,17 @@ static void *in_read_worker(void *args) {
 
         ALOGV("%s: read %d frames from input pcm", __func__, buffer_frames);
 
-        size_t frames_written;
+        size_t frames_written = 0;
         pthread_mutex_lock(&in->lock);
         if (in->resampler) {
             size_t in_frames_count = buffer_frames;
-            size_t out_frames_count = buffer_frames;
+            size_t out_frames_count = (buffer_frames * in->req_config.sample_rate) / in->pcm_config.rate;
             in->resampler->resample_from_input(in->resampler, (int16_t*)buffer, &in_frames_count,
                                             (int16_t*)in->resampler_buffer, &out_frames_count);
             frames_written = audio_vbuffer_write(&in->buffer, in->resampler_buffer, out_frames_count);
         } else {
             frames_written = audio_vbuffer_write(&in->buffer, buffer, buffer_frames);
-        } 
+        }
         pthread_mutex_unlock(&in->lock);
 
         ALOGV("%s: Wrote %d frames to vbuffer", __func__, frames_written);
@@ -1153,7 +1153,7 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
     // init resampler if necessary
     if (out->pcm_config.rate != out->req_config.sample_rate) {
         const size_t resampler_buffer_frame_count =
-            (out->pcm_config.rate * out->pcm_config.period_size) / out->req_config.sample_rate;
+            (out->req_config.sample_rate * out->pcm_config.period_size) / out->pcm_config.rate;
         const size_t resampler_buffer_bytes = resampler_buffer_frame_count * pcm_frame_size;
 
         out->resampler_buffer = malloc(resampler_buffer_bytes);
@@ -1391,13 +1391,14 @@ static int adev_open_input_stream(struct audio_hw_device *dev,
     size_t format_bytes = pcm_format_to_bits(in->pcm_config.format) >> 3;
     const size_t pcm_frame_size = in->pcm_config.channels * format_bytes;
     size_t buffer_frame_count = 0;
-    size_t buffer_bytes;
 
     // init resampler
     if (in->pcm_config.rate != in->req_config.sample_rate) {
-        buffer_frame_count = (in->pcm_config.rate * in->pcm_config.period_size)
-                                    / in->req_config.sample_rate;
-        buffer_bytes = buffer_frame_count * pcm_frame_size;
+
+        buffer_frame_count = (in->pcm_config.period_size * in->req_config.sample_rate)
+                                    / in->pcm_config.rate;
+
+        size_t buffer_bytes = buffer_frame_count * pcm_frame_size;
 
         in->resampler_buffer = malloc(buffer_bytes);
         if (!in->resampler_buffer) {
