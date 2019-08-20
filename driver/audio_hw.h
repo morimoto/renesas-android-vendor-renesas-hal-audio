@@ -47,7 +47,7 @@ struct generic_audio_device {
   Hashmap *out_bus_stream_map;  // Extended field. Constant after init
   audio_mode_t mode;
 
-  struct generic_stream_out *bus_stream_out;
+  struct generic_stream_out *bt_call_stream_bt_out;
   struct hfp_call hfp_call;
 
   int64_t sleep_ms;
@@ -61,7 +61,7 @@ struct generic_stream_out {
   struct audio_config req_config;    // Constant after init
   struct pcm_config pcm_config;      // Constant after init
   audio_vbuffer_t buffer;            // Protected by this->lock
-  const char *bus_address;           // Extended field. Constant after init
+  char *bus_address;                 // Extended field. Constant after init
   struct audio_gain gain_stage;      // Constant after init
   float amplitude_ratio;             // Protected by this->lock
 
@@ -95,7 +95,7 @@ struct generic_stream_in {
   struct pcm *pcm;                   // Protected by this->lock
   struct pcm_config pcm_config;      // Constant after init
   audio_vbuffer_t buffer;            // Protected by this->lock
-  const char *bus_address;           // Extended field. Constant after init
+  char *bus_address;                 // Extended field. Constant after init
 
   // Time & Position Keeping
   bool standby;                       // Protected by this->lock
