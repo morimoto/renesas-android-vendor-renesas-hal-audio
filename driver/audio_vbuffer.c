@@ -180,10 +180,10 @@ size_t audio_vbuffer_write_adjust(audio_vbuffer_t *audio_vbuffer, const void *bu
     }
 
     // expand to to input_channels by copying
-    ALOGV("{%s} expanding buffer from %d to %d channels (%d frames, %d written frames)",
+    ALOGV("{%s} expanding buffer from %zu to %zu channels (%d frames, %zu written frames)",
           __func__, input_channels, audio_vbuffer->channels, frames, frames_written);
     size_t vbuffer_start = audio_vbuffer->head * audio_vbuffer->frame_size;
-    size_t buffer_start = frames_written * audio_vbuffer->frame_size;
+    size_t buffer_start = (frames_written * audio_vbuffer->frame_size * input_channels) / audio_vbuffer->channels;
 
     audio_buffer_adjust(audio_vbuffer->data + vbuffer_start, audio_vbuffer->channels,
                         (uint8_t *)buffer + buffer_start, input_channels,
@@ -214,10 +214,10 @@ size_t audio_vbuffer_read_adjust(audio_vbuffer_t *audio_vbuffer, void *buffer,
     }
 
     // shrink to output_channels by discarding surplus channels
-    ALOGV("{%s} shrinking buffer from %u to %u channels (%d frames, %d read frames)",
+    ALOGV("{%s} shrinking buffer from %zu to %zu channels (%d frames, %zu read frames)",
           __func__, audio_vbuffer->channels, output_channels, frames, frames_read);
     size_t vbuffer_start = audio_vbuffer->tail * audio_vbuffer->frame_size;
-    size_t buffer_start = frames_read * audio_vbuffer->frame_size;
+    size_t buffer_start = (frames_read * audio_vbuffer->frame_size * output_channels) / audio_vbuffer->channels;
 
     audio_buffer_adjust((uint8_t *)buffer + buffer_start, output_channels,
                         audio_vbuffer->data + vbuffer_start, audio_vbuffer->channels,
