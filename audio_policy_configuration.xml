@@ -48,7 +48,7 @@
     -->
     <modules>
         <!-- Primary Audio HAL -->
-        <module name="primary" halVersion="4.0">
+        <module name="primary" halVersion="3.0">
             <attachedDevices>
                 <!-- One bus per context -->
                 <item>bus0_media_out</item>
