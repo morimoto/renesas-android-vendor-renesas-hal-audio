@@ -250,6 +250,7 @@ static void close_mixers_by_array(struct device_card *cards)
             mixer_close(cards[counter].mixer);
             cards[counter].mixer = 0;
         }
+        counter++;
     }
 }
 

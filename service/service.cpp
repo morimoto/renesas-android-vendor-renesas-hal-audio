@@ -33,9 +33,9 @@ using namespace android;
 using android::OK;
 
 int main() {
-	android::sp<IDevicesFactory> service1 = new DevicesFactory();
-	configureRpcThreadpool(1, true /*callerWillJoin*/);
-	status_t status = service1->registerAsService();
+    android::sp<IDevicesFactory> service1 = new DevicesFactory();
+    configureRpcThreadpool(16, true /*callerWillJoin*/);
+    status_t status = service1->registerAsService();
     CHECK_EQ(status, OK) << "Could not register service DevicesFactory: " << status;
 
     ALOGD("%s is ready.", "DevicesFactory");
