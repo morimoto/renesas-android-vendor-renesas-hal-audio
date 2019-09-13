@@ -124,6 +124,8 @@
 
 #define _bool_str(x) ((x)?"true":"false")
 
+#define MAKE_STRING_FROM_PARAM(string) (#string)
+
 static int adev_get_mic_mute(const struct audio_hw_device *dev, bool *state);
 
 static struct pcm_config pcm_config_out_default = {
@@ -313,8 +315,8 @@ static int out_set_parameters(struct audio_stream *stream, const char *kvpairs) 
     struct generic_stream_out *out = (struct generic_stream_out *)stream;
     struct str_parms *parms;
     char value[32];
-    int ret;
-    long val;
+    int ret = 0;
+    int val = 0;
     char *end;
 
     pthread_mutex_lock(&out->lock);
@@ -323,18 +325,29 @@ static int out_set_parameters(struct audio_stream *stream, const char *kvpairs) 
         ret = -ENOSYS;
     } else {
         parms = str_parms_create_str(kvpairs);
-        ret = str_parms_get_str(parms, AUDIO_PARAMETER_STREAM_ROUTING,
-                                value, sizeof(value));
-        if (ret >= 0) {
+        if (str_parms_get_str(parms, AUDIO_PARAMETER_STREAM_ROUTING,
+                                value, sizeof(value)) >= 0) {
             errno = 0;
             val = strtol(value, &end, 10);
             if (errno == 0 && (end != NULL) && (*end == '\0') && ((int)val == val)) {
                 out->device = (int)val;
-                ret = 0;
             } else {
                 ret = -EINVAL;
             }
+        } else if (str_parms_get_str(parms, AUDIO_PARAMETER_STREAM_CHANNELS,
+                value, sizeof(value)) >= 0) {
+            val = atoi(value);
+            out->req_config.channel_mask = val;
+        } else if (str_parms_get_str(parms, AUDIO_PARAMETER_STREAM_FORMAT,
+                value, sizeof(value)) >= 0) {
+            val = atoi(value);
+            out->req_config.format = val;
+        } else if (str_parms_get_str(parms, AUDIO_PARAMETER_STREAM_SAMPLING_RATE,
+                value, sizeof(value)) >= 0) {
+            val = atoi(value);
+            out->req_config.sample_rate = val;
         }
+
         str_parms_destroy(parms);
     }
     pthread_mutex_unlock(&out->lock);
@@ -347,16 +360,35 @@ static char *out_get_parameters(const struct audio_stream *stream, const char *k
     char *str;
     char value[256];
     struct str_parms *reply = str_parms_create();
-    int ret;
 
-    ret = str_parms_get_str(query, AUDIO_PARAMETER_STREAM_ROUTING, value, sizeof(value));
-    if (ret >= 0) {
+    if (str_parms_get_str(query, AUDIO_PARAMETER_STREAM_ROUTING,
+            value, sizeof(value)) >= 0) {
         pthread_mutex_lock(&out->lock);
         str_parms_add_int(reply, AUDIO_PARAMETER_STREAM_ROUTING, out->device);
         pthread_mutex_unlock(&out->lock);
         str = strdup(str_parms_to_str(reply));
+    } else if (str_parms_get_str(query, AUDIO_PARAMETER_STREAM_SUP_SAMPLING_RATES,
+            value, sizeof(value)) >= 0) {
+        str_parms_add_int(reply, AUDIO_PARAMETER_STREAM_SUP_SAMPLING_RATES,
+                DEFAULT_OUT_SAMPLING_RATE);
+        str = strdup(str_parms_to_str(reply));
+    } else if (str_parms_get_str(query, AUDIO_PARAMETER_STREAM_SUP_CHANNELS,
+            value, sizeof(value)) >= 0) {
+        str_parms_add_str(reply, AUDIO_PARAMETER_STREAM_SUP_CHANNELS,
+                MAKE_STRING_FROM_PARAM(AUDIO_CHANNEL_OUT_STEREO|AUDIO_CHANNEL_OUT_MONO));
+        str = strdup(str_parms_to_str(reply));
+    } else if (str_parms_get_str(query, AUDIO_PARAMETER_STREAM_SUP_FORMATS,
+            value, sizeof(value)) >= 0) {
+        str_parms_add_str(reply, AUDIO_PARAMETER_STREAM_SUP_FORMATS,
+                MAKE_STRING_FROM_PARAM(AUDIO_FORMAT_PCM_16_BIT));
+        str = strdup(str_parms_to_str(reply));
+    } else if (str_parms_get_str(query, AUDIO_PARAMETER_STREAM_FRAME_COUNT,
+            value, sizeof(value)) >= 0) {
+        str_parms_add_int(reply, AUDIO_PARAMETER_STREAM_FRAME_COUNT,
+                OUT_PERIOD_SIZE);
+        str = strdup(str_parms_to_str(reply));
     } else {
-        str = strdup(keys);
+        str = strdup("");
     }
 
     str_parms_destroy(query);
@@ -849,8 +881,8 @@ static int in_set_parameters(struct audio_stream *stream, const char *kvpairs) {
     struct generic_stream_in *in = (struct generic_stream_in *)stream;
     struct str_parms *parms;
     char value[32];
-    int ret;
-    long val;
+    int ret = 0;
+    int val = 0;
     char *end;
 
     pthread_mutex_lock(&in->lock);
@@ -859,17 +891,27 @@ static int in_set_parameters(struct audio_stream *stream, const char *kvpairs) {
     } else {
         parms = str_parms_create_str(kvpairs);
 
-        ret = str_parms_get_str(parms, AUDIO_PARAMETER_STREAM_ROUTING,
-                                value, sizeof(value));
-        if (ret >= 0) {
+        if (str_parms_get_str(parms, AUDIO_PARAMETER_STREAM_ROUTING,
+                                value, sizeof(value)) >= 0) {
             errno = 0;
             val = strtol(value, &end, 10);
             if ((errno == 0) && (end != NULL) && (*end == '\0') && ((int)val == val)) {
                 in->device = (int)val;
-                ret = 0;
             } else {
                 ret = -EINVAL;
             }
+        } else if (str_parms_get_str(parms, AUDIO_PARAMETER_STREAM_CHANNELS,
+                value, sizeof(value)) >= 0) {
+            val = atoi(value);
+            in->req_config.channel_mask = val;
+        } else if (str_parms_get_str(parms, AUDIO_PARAMETER_STREAM_FORMAT,
+                value, sizeof(value)) >= 0) {
+            val = atoi(value);
+            in->req_config.format = val;
+        } else if (str_parms_get_str(parms, AUDIO_PARAMETER_STREAM_SAMPLING_RATE,
+                value, sizeof(value)) >= 0) {
+            val = atoi(value);
+            in->req_config.sample_rate = val;
         }
 
         str_parms_destroy(parms);
@@ -884,14 +926,33 @@ static char *in_get_parameters(const struct audio_stream *stream, const char *ke
     char *str;
     char value[256];
     struct str_parms *reply = str_parms_create();
-    int ret;
 
-    ret = str_parms_get_str(query, AUDIO_PARAMETER_STREAM_ROUTING, value, sizeof(value));
-    if (ret >= 0) {
+    if (str_parms_get_str(query, AUDIO_PARAMETER_STREAM_ROUTING,
+            value, sizeof(value)) >= 0) {
         str_parms_add_int(reply, AUDIO_PARAMETER_STREAM_ROUTING, in->device);
         str = strdup(str_parms_to_str(reply));
+    } else if (str_parms_get_str(query, AUDIO_PARAMETER_STREAM_SUP_SAMPLING_RATES,
+            value, sizeof(value)) >= 0) {
+        str_parms_add_int(reply, AUDIO_PARAMETER_STREAM_SUP_SAMPLING_RATES,
+                DEFAULT_IN_SAMPLING_RATE);
+        str = strdup(str_parms_to_str(reply));
+    } else if (str_parms_get_str(query, AUDIO_PARAMETER_STREAM_SUP_CHANNELS,
+            value, sizeof(value)) >= 0) {
+        str_parms_add_str(reply, AUDIO_PARAMETER_STREAM_SUP_CHANNELS,
+                MAKE_STRING_FROM_PARAM(AUDIO_CHANNEL_IN_STEREO|AUDIO_CHANNEL_IN_MONO));
+        str = strdup(str_parms_to_str(reply));
+    } else if (str_parms_get_str(query, AUDIO_PARAMETER_STREAM_SUP_FORMATS,
+            value, sizeof(value)) >= 0) {
+        str_parms_add_str(reply, AUDIO_PARAMETER_STREAM_SUP_FORMATS,
+                MAKE_STRING_FROM_PARAM(AUDIO_FORMAT_PCM_16_BIT));
+        str = strdup(str_parms_to_str(reply));
+    } else if (str_parms_get_str(query, AUDIO_PARAMETER_STREAM_FRAME_COUNT,
+            value, sizeof(value)) >= 0) {
+        str_parms_add_int(reply, AUDIO_PARAMETER_STREAM_FRAME_COUNT,
+                IN_PERIOD_SIZE);
+        str = strdup(str_parms_to_str(reply));
     } else {
-        str = strdup(keys);
+        str = strdup("");
     }
 
     str_parms_destroy(query);
