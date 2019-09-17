@@ -1414,6 +1414,19 @@ static int in_remove_audio_effect(const struct audio_stream *stream, effect_hand
     return 0;
 }
 
+// forward declaration
+static int adev_get_microphones(const audio_hw_device_t *dev,
+                                struct audio_microphone_characteristic_t *mic_array,
+                                size_t *mic_count);
+
+static int in_get_active_microphones(const struct audio_stream_in *stream,
+                                     struct audio_microphone_characteristic_t *mic_array,
+                                     size_t *mic_count)
+{
+    struct generic_stream_in *in = (struct generic_stream_in *)stream;
+    return adev_get_microphones( &in->dev->device, mic_array, mic_count);
+}
+
 static int adev_open_output_stream(struct audio_hw_device *dev,
         audio_io_handle_t handle, audio_devices_t devices, audio_output_flags_t flags,
         struct audio_config *config, struct audio_stream_out **stream_out, const char *address) {
@@ -1887,6 +1900,7 @@ static int adev_open_input_stream(struct audio_hw_device *dev,
         memcpy(&in->pcm_config, &pcm_config_in_hfp, sizeof(struct pcm_config));
     } else {
         memcpy(&in->pcm_config, &pcm_config_in_default, sizeof(struct pcm_config));
+        in->stream.get_active_microphones = in_get_active_microphones;
     }
     //in->pcm_config.rate = config->sample_rate;
     //in->pcm_config.period_size = in->pcm_config.rate*IN_PERIOD_MS/1000;
@@ -2049,6 +2063,48 @@ static int adev_release_audio_patch(struct audio_hw_device *dev,
     return 0;
 }
 
+static int adev_get_microphones(const audio_hw_device_t * dev,
+                                struct audio_microphone_characteristic_t *mic_array,
+                                size_t *mic_count)
+{
+    if (mic_count == NULL) {
+        return -ENOSYS;
+    }
+
+    if (*mic_count == 0) {
+        *mic_count = 1;
+        return 0;
+    }
+
+    if (mic_array == NULL) {
+        return -ENOSYS;
+    }
+
+    strncpy(mic_array->device_id, "mic_renesas", AUDIO_MICROPHONE_ID_MAX_LEN - 1);
+    mic_array->device = AUDIO_DEVICE_IN_BUILTIN_MIC;
+    strncpy(mic_array->address, AUDIO_BOTTOM_MICROPHONE_ADDRESS,
+            AUDIO_DEVICE_MAX_ADDRESS_LEN - 1);
+    memset(mic_array->channel_mapping, AUDIO_MICROPHONE_CHANNEL_MAPPING_UNUSED,
+           sizeof(mic_array->channel_mapping));
+    mic_array->location = AUDIO_MICROPHONE_LOCATION_UNKNOWN;
+    mic_array->group = 0;
+    mic_array->index_in_the_group = 0;
+    mic_array->sensitivity = AUDIO_MICROPHONE_SENSITIVITY_UNKNOWN;
+    mic_array->max_spl = AUDIO_MICROPHONE_SPL_UNKNOWN;
+    mic_array->min_spl = AUDIO_MICROPHONE_SPL_UNKNOWN;
+    mic_array->directionality = AUDIO_MICROPHONE_DIRECTIONALITY_UNKNOWN;
+    mic_array->num_frequency_responses = 0;
+    mic_array->geometric_location.x = AUDIO_MICROPHONE_COORDINATE_UNKNOWN;
+    mic_array->geometric_location.y = AUDIO_MICROPHONE_COORDINATE_UNKNOWN;
+    mic_array->geometric_location.z = AUDIO_MICROPHONE_COORDINATE_UNKNOWN;
+    mic_array->orientation.x = AUDIO_MICROPHONE_COORDINATE_UNKNOWN;
+    mic_array->orientation.y = AUDIO_MICROPHONE_COORDINATE_UNKNOWN;
+    mic_array->orientation.z = AUDIO_MICROPHONE_COORDINATE_UNKNOWN;
+
+    *mic_count = 1;
+    return 0;
+}
+
 static int adev_close(hw_device_t *dev) {
     struct generic_audio_device *adev = (struct generic_audio_device *)dev;
     int ret = 0;
@@ -2140,6 +2196,7 @@ static int adev_open(const hw_module_t *module,
     adev->device.open_input_stream = adev_open_input_stream;
     adev->device.close_input_stream = adev_close_input_stream;
     adev->device.dump = adev_dump;
+    adev->device.get_microphones = adev_get_microphones;
 
     // New in AUDIO_DEVICE_API_VERSION_3_0
     adev->device.set_audio_port_config = adev_set_audio_port_config;
