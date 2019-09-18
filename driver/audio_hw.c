@@ -1231,6 +1231,11 @@ static void *in_read_worker_bt_call(void *args) {
             pthread_mutex_unlock(&in->lock);
             continue;
         }
+
+        if ((in->device == AUDIO_DEVICE_IN_BUILTIN_MIC) && (in->dev->mic_mute)) {
+            memset(buffer, 0x0, pcm_frames_to_bytes(pcm, buffer_frames));
+        }
+
         if (in->device == AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET) {
             size_t frame_size = buffer_size / buffer_frames;
             for (size_t counter = 0; counter < buffer_frames; counter++) {
