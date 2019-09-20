@@ -18,6 +18,7 @@ AUDIO_HAL_INTERFACE_VERSION := V4_0
 
 PRODUCT_PACKAGES += \
     audio.primary.${TARGET_PRODUCT} \
+    audio.r_submix.${TARGET_PRODUCT} \
     android.hardware.audio@5.0-service.renesas \
     android.hardware.automotive.audiocontrol@1.0-service.renesas
 
