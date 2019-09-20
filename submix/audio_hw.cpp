@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define LOG_TAG "r_submix"
+#define LOG_TAG "r_submix.renesas"
 //#define LOG_NDEBUG 0
 
 #include <errno.h>
@@ -141,7 +141,8 @@ struct submix_config {
     size_t buffer_period_size_frames;
 };
 
-#define MAX_ROUTES 10
+#define MAX_ROUTES 20
+#define MAX_CONNECTED_ROUTES 10
 typedef struct route_config {
     struct submix_config config;
     char address[AUDIO_DEVICE_MAX_ADDRESS_LEN];
@@ -164,6 +165,7 @@ typedef struct route_config {
     // stream.
     int16_t resampler_buffer[DEFAULT_PIPE_SIZE_IN_FRAMES];
 #endif // ENABLE_RESAMPLING
+    bool connected;
 } route_config_t;
 
 struct submix_audio_device {
@@ -451,6 +453,8 @@ static void submix_audio_device_create_pipe_l(struct submix_audio_device * const
         SUBMIX_ALOGV("submix_audio_device_create_pipe_l(): pipe frame size %zd, pipe size %zd, "
                      "period size %zd", device_config->pipe_frame_size,
                      device_config->buffer_size_frames, device_config->buffer_period_size_frames);
+
+        rsxadev->routes[route_idx].connected = true;
     }
 }
 
@@ -514,6 +518,10 @@ static void submix_audio_device_destroy_pipe_l(struct submix_audio_device * cons
         ALOG_ASSERT(rsxadev->routes[route_idx].output == out);
         rsxadev->routes[route_idx].output = NULL;
     }
+    if (route_idx != -1) {
+        rsxadev->routes[route_idx].connected = false;
+    }
+
     if (route_idx != -1 &&
             rsxadev->routes[route_idx].input == NULL && rsxadev->routes[route_idx].output == NULL) {
         submix_audio_device_release_pipe_l(rsxadev, route_idx);
@@ -582,12 +590,19 @@ static status_t submix_get_route_idx_for_address_l(const struct submix_audio_dev
     // Do we already have a route for this address
     int route_idx = -1;
     int route_empty_idx = -1; // index of an empty route slot that can be used if needed
-    for (int i=0 ; i < MAX_ROUTES ; i++) {
-        if (strcmp(rsxadev->routes[i].address, "") == 0) {
-            route_empty_idx = i;
+    int connected_routes = 0;
+    for (int max_counter = 0;
+            (max_counter < MAX_ROUTES) && (connected_routes < MAX_CONNECTED_ROUTES);
+            max_counter++) {
+        if (strcmp(rsxadev->routes[max_counter].address, "") == 0) {
+            route_empty_idx = max_counter;
+        } else {
+            if (rsxadev->routes[max_counter].connected) {
+                connected_routes++;
+            }
         }
-        if (strncmp(rsxadev->routes[i].address, address, AUDIO_DEVICE_MAX_ADDRESS_LEN) == 0) {
-            route_idx = i;
+        if (strncmp(rsxadev->routes[max_counter].address, address, AUDIO_DEVICE_MAX_ADDRESS_LEN) == 0) {
+            route_idx = max_counter;
             break;
         }
     }
@@ -597,6 +612,10 @@ static status_t submix_get_route_idx_for_address_l(const struct submix_audio_dev
         return -ENOMEM;
     }
     if (route_idx == -1) {
+        if (connected_routes == MAX_CONNECTED_ROUTES) {
+            ALOGE("Cannot create new route for address %s, max number of connected routes reached", address);
+            return -ENOMEM;
+        }
         route_idx = route_empty_idx;
     }
     *idx = route_idx;
