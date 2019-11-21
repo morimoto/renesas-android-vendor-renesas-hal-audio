@@ -1995,8 +1995,13 @@ static int adev_set_audio_port_config(struct audio_hw_device *dev,
         int minDb = out->gain_stage.min_value / 100;
         int maxDb = out->gain_stage.max_value / 100;
         // curve: 10^((minDb + (maxDb - minDb) * gainIndex / totalSteps) / 20)
-        out->amplitude_ratio = pow(10,
-                (minDb + (maxDb - minDb) * (gainIndex / (float)totalSteps)) / 20);
+        // we should subtract gain at zero gain index to fully silence playback
+        // at zero volume control position, i.e. do:
+        // out->amplitude_ratio = ...
+        //         - pow(10, (minDb + (maxDb - minDb) * (0 / (float)totalSteps)) / 20);
+        out->amplitude_ratio =
+                pow(10, (minDb + (maxDb - minDb) * (gainIndex / (float)totalSteps)) / 20) -
+                pow(10, (minDb) / 20);
         pthread_mutex_unlock(&out->lock);
         ALOGD("%s: set audio gain: %f on %s",
                 __func__, out->amplitude_ratio, bus_address);
