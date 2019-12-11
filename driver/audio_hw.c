@@ -1992,8 +1992,8 @@ static int adev_set_audio_port_config(struct audio_hw_device *dev,
             out->gain_stage.step_value;
         int totalSteps = (out->gain_stage.max_value - out->gain_stage.min_value) /
             out->gain_stage.step_value;
-        int minDb = out->gain_stage.min_value / 100;
-        int maxDb = out->gain_stage.max_value / 100;
+        float minDb = (float)out->gain_stage.min_value / 100.;
+        float maxDb = (float)out->gain_stage.max_value / 100.;
         // curve: 10^((minDb + (maxDb - minDb) * gainIndex / totalSteps) / 20)
         // we should subtract gain at zero gain index to fully silence playback
         // at zero volume control position, i.e. do:
