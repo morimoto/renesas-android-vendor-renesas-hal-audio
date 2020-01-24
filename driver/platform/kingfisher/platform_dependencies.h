@@ -54,7 +54,7 @@
 
 #define DEFAULT_HFP_SAMPLING_RATE   16000
 
-#define HFP_STREAM_BT_OUT_ADDRESS   "bus4_call_out"
+#define HFP_STREAM_BT_OUT_ADDRESS   "bus9_hfp_call_out"
 
 /* These are values that never change */
 struct route_setting defaults[] = {

@@ -1245,7 +1245,7 @@ static void *in_read_worker_bt_call(void *args) {
         }
 
         if (in->device == AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET) {
-            out_stream = (struct generic_stream_out *)&in->dev->bt_call_stream_bt_out->stream;
+            out_stream = (struct generic_stream_out *)&in->dev->hfp_call.headset_output->stream;
         } else {
             out_stream = (struct generic_stream_out *)&in->dev->hfp_call.hfp_output->stream;
         }
@@ -1548,9 +1548,6 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
             .step_value = 100,
         };
         out->amplitude_ratio = 1.0;
-        if (strcmp(address, HFP_STREAM_BT_OUT_ADDRESS) == 0) {
-            adev->bt_call_stream_bt_out = out;
-        }
         ALOGD("%s bus:%s", __func__, out->bus_address);
     }
 
@@ -1565,9 +1562,6 @@ static void adev_close_output_stream(struct audio_hw_device *dev,
     ALOGD("%s bus:%s", __func__, out->bus_address);
     pthread_mutex_lock(&out->lock);
     do_out_standby(out);
-    if ((out->device == AUDIO_DEVICE_OUT_BUS) && (out == adev->bt_call_stream_bt_out)) {
-        adev->bt_call_stream_bt_out = NULL;
-    }
 
     out->worker_exit = true;
     pthread_cond_signal(&out->worker_wake);
@@ -1641,6 +1635,20 @@ static void open_hfp_handles(struct generic_audio_device *adev)
             return;
         }
     }
+    if (adev->hfp_call.headset_output == NULL) {
+        struct audio_stream_out *stream_out;
+        struct audio_config config = {
+                DEFAULT_OUT_SAMPLING_RATE, AUDIO_CHANNEL_OUT_STEREO, AUDIO_FORMAT_PCM_16_BIT, {}, OUT_PERIOD_SIZE};
+        int res = adev->device.open_output_stream(&adev->device, 0,
+                AUDIO_DEVICE_OUT_BUS, AUDIO_OUTPUT_FLAG_NONE, &config, &stream_out, HFP_STREAM_BT_OUT_ADDRESS);
+        if (res == 0) {
+            pthread_mutex_lock(&adev->lock);
+            adev->hfp_call.headset_output = (struct generic_stream_out*)stream_out;
+            pthread_mutex_unlock(&adev->lock);
+        } else {
+            return;
+        }
+    }
 }
 
 static void close_hfp_handles(struct generic_audio_device *adev)
@@ -1649,7 +1657,7 @@ static void close_hfp_handles(struct generic_audio_device *adev)
     struct generic_stream_in *hfp_in = adev->hfp_call.hfp_input;
     struct generic_stream_in *mic = adev->hfp_call.mic_input;
     struct generic_stream_out *hfp_out = adev->hfp_call.hfp_output;
-    struct generic_stream_out *stereo_out = adev->bt_call_stream_bt_out;
+    struct generic_stream_out *stereo_out = adev->hfp_call.headset_output;
     adev->hfp_call.stream_flag = 0;
     pthread_mutex_unlock(&adev->lock);
 

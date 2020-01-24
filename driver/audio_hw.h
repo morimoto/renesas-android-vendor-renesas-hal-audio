@@ -32,6 +32,7 @@ struct hfp_call {
     struct generic_stream_in *mic_input;
     struct generic_stream_in *hfp_input;
     struct generic_stream_out *hfp_output;
+    struct generic_stream_out *headset_output;
 
     unsigned int hfp_volume;
 
@@ -47,7 +48,6 @@ struct generic_audio_device {
   Hashmap *out_bus_stream_map;  // Extended field. Constant after init
   audio_mode_t mode;
 
-  struct generic_stream_out *bt_call_stream_bt_out;
   struct hfp_call hfp_call;
 
   int64_t sleep_ms;
