@@ -3,6 +3,10 @@
 
 #include "../audio_hal_types.h"
 
+/* Supported features */
+#define GEN3_HFP_SUPPORT
+#define GEN3_FM_SUPPORT
+
 #define MIXER_PLAY_VOL_CTRL_TYPE    "DAC Volume Control Type"
 #define MIXER_PLAY_VOL_MASTER       "Master Playback Volume"
 #define MIXER_PLAY_VOL_DAC1         "DAC1 Playback Volume"
@@ -53,8 +57,6 @@
 #define DEFAULT_IN_SAMPLING_RATE    48000
 
 #define DEFAULT_HFP_SAMPLING_RATE   16000
-
-#define HFP_STREAM_BT_OUT_ADDRESS   "bus9_hfp_call_out"
 
 /* These are values that never change */
 struct route_setting defaults[] = {
@@ -136,4 +138,4 @@ struct device_card cards[] = {
     }
 };
 
-#endif
+#endif // PLATFORM_DEPENDENCIES_H

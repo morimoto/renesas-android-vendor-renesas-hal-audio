@@ -3,6 +3,14 @@
 
 #include "../audio_hal_types.h"
 
+/* Supported features */
+#ifdef GEN3_HFP_SUPPORT
+#undef GEN3_HFP_SUPPORT
+#endif
+#ifdef GEN3_FM_SUPPORT
+#undef GEN3_HFP_SUPPORT
+#endif
+
 #define MIXER_PLAY_VOL              "DVC Out Playback Volume"
 #define MIXER_CAPTURE_VOL           "DVC In Capture Volume"
 
@@ -54,4 +62,4 @@ struct device_card cards[] = {
     }
 };
 
-#endif
+#endif // PLATFORM_DEPENDENCIES_H
