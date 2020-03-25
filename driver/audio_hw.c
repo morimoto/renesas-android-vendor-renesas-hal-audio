@@ -43,84 +43,20 @@
 #include "buffer_utils.h"
 
 // device specific definitions
-#include "platform_dependencies.h"
+#include "hal_dependencies.h"
 
-#define OUT_PERIOD_MS 15
-#define OUT_PERIOD_COUNT 4
-
-#define OUT_PERIOD_SIZE 512
-#define IN_PERIOD_MS 15
-#define IN_PERIOD_COUNT 4
-#define IN_PERIOD_SIZE 512
-
-// defined externally
-#ifndef OUT_CHANNELS_DEFAULT
-#define OUT_CHANNELS_DEFAULT 8
-#endif // OUT_CHANNELS_DEFAULT
-
-#ifndef IN_CHANNELS_DEFAULT
-#define IN_CHANNELS_DEFAULT 6
-#endif // IN_CHANNELS_DEFAULT
-
-#ifndef IN_CHANNELS_FM
-#define IN_CHANNELS_FM 2
-#endif // IN_CHANNELS_FM
-
-#ifndef IN_CHANNELS_HFP
-#define IN_CHANNELS_HFP 2
-#endif // IN_CHANNELS_HFP
-
-#ifndef OUT_CHANNELS_HFP
-#define OUT_CHANNELS_HFP 2
-#endif // OUT_CHANNELS_HFP
-
-#ifndef PCM_CARD_DEFAULT
-#define PCM_CARD_DEFAULT 0
-#endif // PCM_CARD_DEFAULT
-
-#ifndef PCM_DEVICE_DEFAULT
-#define PCM_DEVICE_DEFAULT 0
-#endif // PCM_DEVICE_DEFAULT
-
-#ifndef PCM_CARD_FM
-#define PCM_CARD_FM UINT32_MAX
-#endif // PCM_CARD_FM
-
-#ifndef PCM_DEVICE_FM
-#define PCM_DEVICE_FM UINT32_MAX
-#endif // PCM_DEVICE_FM
-
-#ifndef PCM_CARD_HFP
-#define PCM_CARD_HFP UINT32_MAX
-#endif // PCM_CARD_FM
-
-#ifndef PCM_DEVICE_HFP
-#define PCM_DEVICE_HFP UINT32_MAX
-#endif // PCM_DEVICE_FM
-
-#ifndef DEFAULT_OUT_SAMPLING_RATE
-#define DEFAULT_OUT_SAMPLING_RATE   48000
-#endif // DEFAULT_OUT_SAMPLING_RATE
-
-#ifndef DEFAULT_IN_SAMPLING_RATE
-#define DEFAULT_IN_SAMPLING_RATE   48000
-#endif // DEFAULT_IN_SAMPLING_RATE
-
-#ifndef DEFAULT_HFP_SAMPLING_RATE
-#define DEFAULT_HFP_SAMPLING_RATE   16000
-#endif // DEFAULT_HFP_SAMPLING_RATE
-
-#ifndef HFP_STREAM_BT_OUT_ADDRESS
-#define HFP_STREAM_BT_OUT_ADDRESS   ""
-#endif // HFP_STREAM_BT_OUT_ADDRESS
+#ifdef GEN3_HFP_SUPPORT
 
 #define SLEEP_MAX 200000
 #define SLEEP_MS 10000
+
+#define HFP_STREAM_BT_OUT_ADDRESS   "bus9_hfp_call_out"
 
 #define HFP_IN_ACTIVE_FLAG 0x1
 #define MIC_IN_ACTIVE_FLAG 0x2
 #define HFP_OUT_ACTIVE_FLAG 0x4
 #define ALL_ACTIVE_FLAG (HFP_IN_ACTIVE_FLAG | MIC_IN_ACTIVE_FLAG | HFP_OUT_ACTIVE_FLAG)
+#endif
 
 #define _bool_str(x) ((x)?"true":"false")
 
@@ -137,14 +73,6 @@ static struct pcm_config pcm_config_out_default = {
 //    .start_threshold = 0,
 };
 
-struct pcm_config pcm_config_out_hfp = {
-    .channels = OUT_CHANNELS_HFP,
-    .rate = DEFAULT_HFP_SAMPLING_RATE,
-    .period_size = OUT_PERIOD_SIZE,
-    .period_count = OUT_PERIOD_COUNT,
-    .format = PCM_FORMAT_S16_LE
-};
-
 static struct pcm_config pcm_config_in_default = {
     .channels = IN_CHANNELS_DEFAULT,
     .rate = DEFAULT_IN_SAMPLING_RATE,
@@ -155,12 +83,13 @@ static struct pcm_config pcm_config_in_default = {
 //    .stop_threshold = INT_MAX,
 };
 
-static struct pcm_config pcm_config_in_fm = {
-    .channels = IN_CHANNELS_FM,
-    .rate = DEFAULT_IN_SAMPLING_RATE,
-    .period_size = IN_PERIOD_SIZE,
-    .period_count = IN_PERIOD_COUNT,
-    .format = PCM_FORMAT_S16_LE,
+#ifdef GEN3_HFP_SUPPORT
+struct pcm_config pcm_config_out_hfp = {
+    .channels = OUT_CHANNELS_HFP,
+    .rate = DEFAULT_HFP_SAMPLING_RATE,
+    .period_size = OUT_PERIOD_SIZE,
+    .period_count = OUT_PERIOD_COUNT,
+    .format = PCM_FORMAT_S16_LE
 };
 
 struct pcm_config pcm_config_in_hfp = {
@@ -170,6 +99,18 @@ struct pcm_config pcm_config_in_hfp = {
     .period_count = IN_PERIOD_COUNT,
     .format = PCM_FORMAT_S16_LE
 };
+#endif
+
+
+#ifdef GEN3_FM_SUPPORT
+static struct pcm_config pcm_config_in_fm = {
+    .channels = IN_CHANNELS_FM,
+    .rate = DEFAULT_IN_SAMPLING_RATE,
+    .period_size = IN_PERIOD_SIZE,
+    .period_count = IN_PERIOD_COUNT,
+    .format = PCM_FORMAT_S16_LE,
+};
+#endif
 
 static pthread_mutex_t adev_init_lock = PTHREAD_MUTEX_INITIALIZER;
 static unsigned int audio_device_ref_count = 0;
@@ -442,12 +383,13 @@ static void *out_write_worker(void *args) {
             }
 
             close_pcm = false;
-
+#ifdef GEN3_HFP_SUPPORT
             pthread_mutex_lock(&out->dev->lock);
             if (out->device == AUDIO_DEVICE_OUT_BLUETOOTH_SCO) {
                 out->dev->hfp_call.stream_flag |= HFP_OUT_ACTIVE_FLAG;
             }
             pthread_mutex_unlock(&out->dev->lock);
+#endif
 
             pthread_cond_wait(&out->worker_wake, &out->lock);
         }
@@ -461,14 +403,16 @@ static void *out_write_worker(void *args) {
             unsigned int card = PCM_CARD_DEFAULT;
             unsigned int device = PCM_DEVICE_DEFAULT;
             unsigned int flags = PCM_OUT | PCM_MONOTONIC;
+#ifdef GEN3_HFP_SUPPORT
             if (out->device == AUDIO_DEVICE_OUT_BLUETOOTH_SCO) {
                 card = PCM_CARD_HFP;
                 device = PCM_DEVICE_HFP;
                 flags = PCM_OUT;
                 ext_pcm = ext_pcm_open_hfp(card, device, flags, &out->pcm_config);
-            } else {
+            } else
+#endif
                 ext_pcm = ext_pcm_open_default(card, device, flags, &out->pcm_config);
-            }
+
 
             if (!ext_pcm_is_ready(ext_pcm)) {
                 ALOGE("pcm_open(out) failed: %s: address %s channels %d format %d rate %d period size %d",
@@ -1057,13 +1001,19 @@ static void *in_read_worker(void *args) {
         if (!pcm) {
             ALOGD("%s: opening input pcm", __func__);
             unsigned int card, device;
+#ifdef GEN3_FM_SUPPORT
             if (in->device == AUDIO_DEVICE_IN_FM_TUNER) {
                 card = PCM_CARD_FM;
                 device = PCM_DEVICE_FM;
-            } else if (in->device == AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET) {
+            } else
+#endif
+#ifdef GEN3_HFP_SUPPORT
+            if (in->device == AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET) {
                 card = PCM_CARD_HFP;
                 device = PCM_DEVICE_HFP;
-            } else {
+            } else
+#endif
+            {
                 card = PCM_CARD_DEFAULT;
                 device = PCM_DEVICE_DEFAULT;
             }
@@ -1121,6 +1071,7 @@ static void *in_read_worker(void *args) {
     return NULL;
 }
 
+#ifdef GEN3_HFP_SUPPORT
 static void *in_read_worker_bt_call(void *args) {
     struct generic_stream_in *in = (struct generic_stream_in *)args;
     struct pcm *pcm = NULL;
@@ -1314,6 +1265,7 @@ static void *in_read_worker_bt_call(void *args) {
     }
     return NULL;
 }
+#endif
 
 static ssize_t in_read(struct audio_stream_in *stream, void *buffer, size_t bytes) {
     struct generic_stream_in *in = (struct generic_stream_in *)stream;
@@ -1474,8 +1426,14 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
     out->dev = adev;
     out->device = devices;
     memcpy(&out->req_config, config, sizeof(struct audio_config));
+
     if (devices == AUDIO_DEVICE_OUT_BLUETOOTH_SCO) {
+#ifdef GEN3_HFP_SUPPORT
         memcpy(&out->pcm_config, &pcm_config_out_hfp, sizeof(struct pcm_config));
+#else
+        ALOGE("AUDIO_DEVICE_OUT_BLUETOOTH_SCO is not supported!");
+        return -EINVAL;
+#endif
     } else {
         memcpy(&out->pcm_config, &pcm_config_out_default, sizeof(struct pcm_config));
     }
@@ -1489,9 +1447,12 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
     out->frames_total_buffered = 0;
     out->frames_written = 0;
     out->frames_rendered = 0;
+
+#ifdef GEN3_HFP_SUPPORT
     if (devices == AUDIO_DEVICE_OUT_BLUETOOTH_SCO) {
         out->amplitude_ratio = 1.0;
     }
+#endif
 
     const size_t format_bytes = pcm_format_to_bits(out->pcm_config.format) >> 3;
     const size_t pcm_frame_size = out->pcm_config.channels * format_bytes;
@@ -1587,6 +1548,7 @@ static void adev_close_output_stream(struct audio_hw_device *dev,
     free(stream);
 }
 
+#ifdef GEN3_HFP_SUPPORT
 static void open_hfp_handles(struct generic_audio_device *adev)
 {
     adev->hfp_call.stream_flag = 0;
@@ -1719,8 +1681,10 @@ static void stop_hfp_call(struct generic_audio_device *adev) {
     adev->sleep_ms = 0;
     pthread_mutex_unlock(&adev->lock);
 }
+#endif
 
 static int adev_set_parameters(struct audio_hw_device *dev, const char *kvpairs) {
+#ifdef GEN3_HFP_SUPPORT
     struct generic_audio_device *adev = (struct generic_audio_device *)dev;
     struct str_parms *parms;
     char value[32];
@@ -1769,6 +1733,7 @@ static int adev_set_parameters(struct audio_hw_device *dev, const char *kvpairs)
         }
     }
     str_parms_destroy(parms);
+#endif
 
     return 0;
 }
@@ -1908,9 +1873,19 @@ static int adev_open_input_stream(struct audio_hw_device *dev,
     in->device = devices;
     memcpy(&in->req_config, config, sizeof(struct audio_config));
     if (in->device == AUDIO_DEVICE_IN_FM_TUNER) {
+#ifdef GEN3_FM_SUPPORT
         memcpy(&in->pcm_config, &pcm_config_in_fm, sizeof(struct pcm_config));
+#else
+        ALOGE("AUDIO_DEVICE_IN_FM_TUNER not supported!");
+        return -EINVAL;
+#endif
     } else if (in->device == AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET) {
+#ifdef GEN3_HFP_SUPPORT
         memcpy(&in->pcm_config, &pcm_config_in_hfp, sizeof(struct pcm_config));
+#else
+        ALOGE("AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET not supported!");
+        return -EINVAL;
+#endif
     } else {
         memcpy(&in->pcm_config, &pcm_config_in_default, sizeof(struct pcm_config));
         in->stream.get_active_microphones = in_get_active_microphones;
@@ -1969,7 +1944,12 @@ static int adev_open_input_stream(struct audio_hw_device *dev,
     in->worker_standby = true;
     in->worker_exit = false;
     if (source == AUDIO_SOURCE_VOICE_CALL) {
+#ifdef GEN3_HFP_SUPPORT
         pthread_create(&in->worker_thread, NULL, in_read_worker_bt_call, in);
+#else
+        ALOGE("AUDIO_SOURCE_VOICE_CALL not supported!");
+        return -EINVAL;
+#endif
     } else {
         pthread_create(&in->worker_thread, NULL, in_read_worker, in);
     }
