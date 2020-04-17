@@ -14,11 +14,19 @@
 #define MIXER_PLAY_VOL              "DVC Out Playback Volume"
 #define MIXER_CAPTURE_VOL           "DVC In Capture Volume"
 
+#ifdef ENABLE_ADSP
+#define MIXER_ADSP_PLAY_VOL         "PlaybackVolume" /* Volume gain in ADSP */
+#endif
+
 #define MIXER_PLAY_V_DEFAULT        260000      /* Max volume w/o distortion */
 #define MIXER_PLAY_V_MAX            0x7fffff
 
 #define MIXER_CAPTURE_V_DEFAULT     0x2DC6C0
 #define MIXER_CAPTURE_V_MAX         0x7fffff
+
+#ifdef ENABLE_ADSP
+#define MIXER_ADSP_PLAY_VOL_DEFAULT 25 /* This value was get experimentally */
+#endif
 
 #define MIXER_MAXIMUM_LPCM_CHANNELS "Maximum LPCM channels"
 
@@ -48,6 +56,12 @@ static struct route_setting defaults[] = {
         .ctl_name = MIXER_CAPTURE_VOL,
         .intval = MIXER_CAPTURE_V_DEFAULT,
     },
+#ifdef ENABLE_ADSP
+    {
+        .ctl_name = MIXER_ADSP_PLAY_VOL,
+        .intval = MIXER_ADSP_PLAY_VOL_DEFAULT,
+    },
+#endif
     {
         .ctl_name = NULL,
     },

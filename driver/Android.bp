@@ -14,7 +14,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-cc_defaults {
+soong_config_module_type {
+    name: "audio_hw_cc_defaults",
+    module_type: "cc_defaults",
+    config_namespace: "audio_hw",
+    bool_variables: ["adsp"],
+    properties: ["cflags"],
+}
+
+audio_hw_cc_defaults {
     vendor: true,
     name: "primary_defaults",
     relative_install_path: "hw",
@@ -36,6 +44,11 @@ cc_defaults {
         "libaudioutils",
     ],
     cflags: ["-Wno-unused-parameter"],
+    soong_config_variables: {
+        adsp: {
+            cflags: ["-DENABLE_ADSP"],
+        },
+    },
     header_libs: [
         "libhardware_headers",
         "libcutils_headers",
