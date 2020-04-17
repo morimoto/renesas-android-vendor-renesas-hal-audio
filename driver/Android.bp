@@ -14,9 +14,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/*
+ * Add audio_hw_adsp.go file into build system as plugin to add custom
+ * $ENABLE_ADSP handling. It will create custom module type with hook.
+ */
+bootstrap_go_package {
+    name: "soong-audio_hw_adsp_plugin",
+    pkgPath: "android/soong/vendor/renesas/hal/audio/adsp_plugin",
+    deps: [
+        "soong",
+        "soong-android",
+        "soong-cc"
+    ],
+    srcs: [
+        "audio_hw_adsp.go"
+    ],
+    pluginFor: ["soong_build"],
+}
+
+/*
+ * audio_hw_adsp.go register custom module type - audio_hw_adsp_defaults.
+ * Now we create instance of this module type to include it to Audio HAL
+ * cc_defaults. This module will add -DENABLE_ADSP to cflags on creation.
+ */
+audio_hw_adsp_defaults {
+    name: "audio_hw_adsp_defaults-instance",
+}
+
 cc_defaults {
     vendor: true,
     name: "primary_defaults",
+    defaults: ["audio_hw_adsp_defaults-instance"],
     relative_install_path: "hw",
     srcs: [
         "audio_hw.c",
