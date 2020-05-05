@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,29 +14,27 @@
  * limitations under the License.
  */
 
-#ifndef android_hardware_audio_V5_0_ParametersUtil_H_
-#define android_hardware_audio_V5_0_ParametersUtil_H_
+#ifndef ANDROID_HARDWARE_AUDIO_PARAMETERS_UTIL_H_
+#define ANDROID_HARDWARE_AUDIO_PARAMETERS_UTIL_H_
 
-#include <android/hardware/audio/5.0/types.h>
-#include <android/hardware/audio/common/5.0/types.h>
-
-#include <hidl/HidlSupport.h>
-#include <media/AudioParameter.h>
+#include PATH(android/hardware/audio/FILE_VERSION/types.h)
 
 #include <functional>
 #include <memory>
 
+#include <hidl/HidlSupport.h>
+#include <media/AudioParameter.h>
+
 namespace android {
 namespace hardware {
 namespace audio {
-namespace V5_0 {
-namespace renesas {
+namespace CPP_VERSION {
+namespace implementation {
 
-using common::V5_0::DeviceAddress;
-using ::android::hardware::audio::V5_0::ParameterValue;
-using ::android::hardware::audio::V5_0::Result;
 using ::android::hardware::hidl_string;
 using ::android::hardware::hidl_vec;
+using namespace ::android::hardware::audio::common::CPP_VERSION;
+using namespace ::android::hardware::audio::CPP_VERSION;
 
 class ParametersUtil {
    public:
@@ -63,10 +61,10 @@ class ParametersUtil {
     virtual int halSetParameters(const char* keysAndValues) = 0;
 };
 
-}  // namespace renesas
-}  // namespace V5_0
+}  // namespace implementation
+}  // namespace CPP_VERSION
 }  // namespace audio
 }  // namespace hardware
 }  // namespace android
 
-#endif  // android_hardware_audio_V5_0_ParametersUtil_H_
+#endif  // ANDROID_HARDWARE_AUDIO_PARAMETERS_UTIL_H_

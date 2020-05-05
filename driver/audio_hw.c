@@ -727,6 +727,17 @@ static int out_get_next_write_timestamp(const struct audio_stream_out *stream,
     return -ENOSYS;
 }
 
+static int out_set_callback(struct audio_stream_out *stream,
+        stream_callback_t callback, void *cookie)
+{
+    return 0;
+}
+
+static void out_update_source_metadata(struct audio_stream_out *stream,
+        const struct source_metadata* source_metadata)
+{
+}
+
 static uint32_t in_get_sample_rate(const struct audio_stream *stream) {
     struct generic_stream_in *in = (struct generic_stream_in *)stream;
     return in->req_config.sample_rate;
@@ -1419,6 +1430,23 @@ static int in_remove_audio_effect(const struct audio_stream *stream, effect_hand
     return 0;
 }
 
+static int in_set_microphone_direction(const struct audio_stream_in *stream,
+        audio_microphone_direction_t direction)
+{
+    return 0;
+}
+
+static int in_set_microphone_field_dimension(const struct audio_stream_in *stream,
+        float zoom)
+{
+    return 0;
+}
+
+static void in_update_sink_metadata(struct audio_stream_in *stream,
+        const struct sink_metadata* sink_metadata)
+{
+}
+
 // forward declaration
 static int adev_get_microphones(const audio_hw_device_t *dev,
                                 struct audio_microphone_characteristic_t *mic_array,
@@ -1469,6 +1497,8 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
     out->stream.get_render_position = out_get_render_position;
     out->stream.get_presentation_position = out_get_presentation_position;
     out->stream.get_next_write_timestamp = out_get_next_write_timestamp;
+    out->stream.set_callback =  out_set_callback;
+    out->stream.update_source_metadata = out_update_source_metadata;
 
     pthread_mutex_init(&out->lock, (const pthread_mutexattr_t *) NULL);
     out->dev = adev;
@@ -1902,6 +1932,9 @@ static int adev_open_input_stream(struct audio_hw_device *dev,
     in->stream.read = in_read;
     in->stream.get_input_frames_lost = in_get_input_frames_lost;    // no op
     in->stream.get_capture_position = in_get_capture_position;
+    in->stream.set_microphone_direction = in_set_microphone_direction;
+    in->stream.set_microphone_field_dimension = in_set_microphone_field_dimension;
+    in->stream.update_sink_metadata = in_update_sink_metadata;
 
     pthread_mutex_init(&in->lock, (const pthread_mutexattr_t *) NULL);
     in->dev = adev;

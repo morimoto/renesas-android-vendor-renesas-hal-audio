@@ -4,6 +4,9 @@ cc_binary {
     relative_install_path: "hw",
     init_rc: ["android.hardware.audio@5.0-service.renesas.rc"],
     vintf_fragments: ["android.hardware.audio@5.0-service.renesas.xml"],
+
+    defaults: ["audio_hal_version_defaults"],
+
     srcs: [
         "service.cpp",
         "Conversions.cpp",
@@ -16,9 +19,9 @@ cc_binary {
         "StreamOut.cpp",
     ],
 
-    include_dirs: [
-        "frameworks/av/include",
-        ],
+    cflags: [
+        "-include common/all-versions/VersionMacro.h",
+    ],
 
     shared_libs: [
         "libaudiofoundation",
@@ -38,9 +41,5 @@ cc_binary {
 
     header_libs: [
         "android.hardware.audio.common.util@all-versions",
-        "libaudioclient_headers",
-        "libaudio_system_headers",
-        "libhardware_headers",
-        "libmedia_headers",
     ],
 }

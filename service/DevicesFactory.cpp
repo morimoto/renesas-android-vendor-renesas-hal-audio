@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,38 @@
 
 #define LOG_TAG "DevicesFactoryHAL"
 
-
-#include "Device.h"
-#include "DevicesFactory.h"
-#include "PrimaryDevice.h"
-
-#include <android/log.h>
+#include "core/default/DevicesFactory.h"
+#include "core/default/Device.h"
+#include "core/default/PrimaryDevice.h"
 
 #include <string.h>
+
+#include <android/log.h>
 
 namespace android {
 namespace hardware {
 namespace audio {
-namespace V5_0 {
-namespace renesas {
+namespace CPP_VERSION {
+namespace implementation {
 
+#if MAJOR_VERSION == 2
+Return<void> DevicesFactory::openDevice(IDevicesFactory::Device device, openDevice_cb _hidl_cb) {
+    switch (device) {
+        case IDevicesFactory::Device::PRIMARY:
+            return openDevice<PrimaryDevice>(AUDIO_HARDWARE_MODULE_ID_PRIMARY, _hidl_cb);
+        case IDevicesFactory::Device::A2DP:
+            return openDevice(AUDIO_HARDWARE_MODULE_ID_A2DP, _hidl_cb);
+        case IDevicesFactory::Device::USB:
+            return openDevice(AUDIO_HARDWARE_MODULE_ID_USB, _hidl_cb);
+        case IDevicesFactory::Device::R_SUBMIX:
+            return openDevice(AUDIO_HARDWARE_MODULE_ID_REMOTE_SUBMIX, _hidl_cb);
+        case IDevicesFactory::Device::STUB:
+            return openDevice(AUDIO_HARDWARE_MODULE_ID_STUB, _hidl_cb);
+    }
+    _hidl_cb(Result::INVALID_ARGUMENTS, nullptr);
+    return Void();
+}
+#elif MAJOR_VERSION >= 4
 Return<void> DevicesFactory::openDevice(const hidl_string& moduleName, openDevice_cb _hidl_cb) {
     if (moduleName == AUDIO_HARDWARE_MODULE_ID_PRIMARY) {
         return openDevice<PrimaryDevice>(moduleName.c_str(), _hidl_cb);
@@ -40,9 +57,10 @@ Return<void> DevicesFactory::openDevice(const hidl_string& moduleName, openDevic
 Return<void> DevicesFactory::openPrimaryDevice(openPrimaryDevice_cb _hidl_cb) {
     return openDevice<PrimaryDevice>(AUDIO_HARDWARE_MODULE_ID_PRIMARY, _hidl_cb);
 }
+#endif
 
 Return<void> DevicesFactory::openDevice(const char* moduleName, openDevice_cb _hidl_cb) {
-    return openDevice<renesas::Device>(moduleName, _hidl_cb);
+    return openDevice<implementation::Device>(moduleName, _hidl_cb);
 }
 
 template <class DeviceShim, class Callback>
@@ -91,12 +109,12 @@ out:
     return rc;
 }
 
-IDevicesFactory* HIDL_FETCH_IDevicesFactory(const char* /* name */) {
-    return new DevicesFactory();
+IDevicesFactory* HIDL_FETCH_IDevicesFactory(const char* name) {
+    return strcmp(name, "default") == 0 ? new DevicesFactory() : nullptr;
 }
 
-}  // namespace renesas
-}  // namespace V5_0
+}  // namespace implementation
+}  // namespace CPP_VERSION
 }  // namespace audio
 }  // namespace hardware
 }  // namespace android

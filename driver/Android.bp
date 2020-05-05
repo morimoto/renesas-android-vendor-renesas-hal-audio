@@ -18,6 +18,9 @@ cc_defaults {
     vendor: true,
     name: "primary_defaults",
     relative_install_path: "hw",
+
+    defaults: ["audio_hal_version_defaults"],
+
     srcs: [
         "audio_hw.c",
         "ext_pcm.c",

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,16 +14,17 @@
  * limitations under the License.
  */
 
-#include "ParametersUtil.h"
-#include "Util.h"
-#include "Conversions.h"
+#include "core/default/ParametersUtil.h"
+#include "core/default/Conversions.h"
+#include "core/default/Util.h"
+
+#include <system/audio.h>
 
 namespace android {
 namespace hardware {
 namespace audio {
-namespace V5_0 {
-namespace renesas {
-
+namespace CPP_VERSION {
+namespace implementation {
 
 /** Converts a status_t in Result according to the rules of AudioParameter::get*
  * Note: Static method and not private method to avoid leaking status_t dependency
@@ -159,8 +160,8 @@ Result ParametersUtil::setParams(const AudioParameter& param) {
     return util::analyzeStatus(halStatus);
 }
 
-}  // namespace renesas
-}  // namespace V5_0
+}  // namespace implementation
+}  // namespace CPP_VERSION
 }  // namespace audio
 }  // namespace hardware
 }  // namespace android

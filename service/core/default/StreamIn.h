@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,44 +14,36 @@
  * limitations under the License.
  */
 
-#ifndef ANDROID_HARDWARE_AUDIO_V5_0_STREAMIN_H
-#define ANDROID_HARDWARE_AUDIO_V5_0_STREAMIN_H
+#ifndef ANDROID_HARDWARE_AUDIO_STREAMIN_H
+#define ANDROID_HARDWARE_AUDIO_STREAMIN_H
+
+#include PATH(android/hardware/audio/FILE_VERSION/IStreamIn.h)
 
 #include "Device.h"
 #include "Stream.h"
 
-#include <android/hardware/audio/5.0/IStreamIn.h>
-
-#include <hidl/MQDescriptor.h>
-#include <fmq/EventFlag.h>
-#include <fmq/MessageQueue.h>
-#include <hidl/Status.h>
-#include <utils/Thread.h>
-
 #include <atomic>
 #include <memory>
+
+#include <fmq/EventFlag.h>
+#include <fmq/MessageQueue.h>
+#include <hidl/MQDescriptor.h>
+#include <hidl/Status.h>
+#include <utils/Thread.h>
 
 namespace android {
 namespace hardware {
 namespace audio {
-namespace V5_0 {
-namespace renesas {
+namespace CPP_VERSION {
+namespace implementation {
 
-using ::android::hardware::audio::common::V5_0::AudioChannelMask;
-using ::android::hardware::audio::common::V5_0::AudioDevice;
-using ::android::hardware::audio::common::V5_0::AudioFormat;
-using ::android::hardware::audio::common::V5_0::AudioSource;
-using ::android::hardware::audio::common::V5_0::DeviceAddress;
-using ::android::hardware::audio::V5_0::IStream;
-using ::android::hardware::audio::V5_0::IStreamIn;
-using ::android::hardware::audio::V5_0::ParameterValue;
-using ::android::hardware::audio::V5_0::Result;
+using ::android::sp;
+using ::android::hardware::hidl_string;
+using ::android::hardware::hidl_vec;
 using ::android::hardware::Return;
 using ::android::hardware::Void;
-using ::android::hardware::hidl_vec;
-using ::android::hardware::hidl_string;
-using ::android::sp;
-
+using namespace ::android::hardware::audio::common::CPP_VERSION;
+using namespace ::android::hardware::audio::CPP_VERSION;
 
 struct StreamIn : public IStreamIn {
     typedef MessageQueue<ReadParameters, kSynchronizedReadWrite> CommandMQ;
@@ -60,11 +52,15 @@ struct StreamIn : public IStreamIn {
 
     StreamIn(const sp<Device>& device, audio_stream_in_t* stream);
 
-    // Methods from ::android::hardware::audio::AUDIO_HAL_VERSION::IStream follow.
+    // Methods from ::android::hardware::audio::CPP_VERSION::IStream follow.
     Return<uint64_t> getFrameSize() override;
     Return<uint64_t> getFrameCount() override;
     Return<uint64_t> getBufferSize() override;
     Return<uint32_t> getSampleRate() override;
+#if MAJOR_VERSION == 2
+    Return<void> getSupportedSampleRates(getSupportedSampleRates_cb _hidl_cb) override;
+    Return<void> getSupportedChannelMasks(getSupportedChannelMasks_cb _hidl_cb) override;
+#endif
     Return<void> getSupportedSampleRates(AudioFormat format, getSupportedSampleRates_cb _hidl_cb);
     Return<void> getSupportedChannelMasks(AudioFormat format, getSupportedChannelMasks_cb _hidl_cb);
     Return<Result> setSampleRate(uint32_t sampleRateHz) override;
@@ -77,6 +73,14 @@ struct StreamIn : public IStreamIn {
     Return<Result> addEffect(uint64_t effectId) override;
     Return<Result> removeEffect(uint64_t effectId) override;
     Return<Result> standby() override;
+#if MAJOR_VERSION == 2
+    Return<AudioDevice> getDevice() override;
+    Return<Result> setDevice(const DeviceAddress& address) override;
+    Return<void> getParameters(const hidl_vec<hidl_string>& keys,
+                               getParameters_cb _hidl_cb) override;
+    Return<Result> setParameters(const hidl_vec<ParameterValue>& parameters) override;
+    Return<Result> setConnectedState(const DeviceAddress& address, bool connected) override;
+#elif MAJOR_VERSION >= 4
     Return<void> getDevices(getDevices_cb _hidl_cb) override;
     Return<Result> setDevices(const hidl_vec<DeviceAddress>& devices) override;
     Return<void> getParameters(const hidl_vec<ParameterValue>& context,
@@ -84,12 +88,16 @@ struct StreamIn : public IStreamIn {
                                getParameters_cb _hidl_cb) override;
     Return<Result> setParameters(const hidl_vec<ParameterValue>& context,
                                  const hidl_vec<ParameterValue>& parameters) override;
+#endif
     Return<Result> setHwAvSync(uint32_t hwAvSync) override;
     Return<Result> close() override;
 
     Return<void> debug(const hidl_handle& fd, const hidl_vec<hidl_string>& options) override;
+#if MAJOR_VERSION == 2
+    Return<void> debugDump(const hidl_handle& fd) override;
+#endif
 
-    // Methods from ::android::hardware::audio::AUDIO_HAL_VERSION::IStreamIn follow.
+    // Methods from ::android::hardware::audio::CPP_VERSION::IStreamIn follow.
     Return<void> getAudioSource(getAudioSource_cb _hidl_cb) override;
     Return<Result> setGain(float gain) override;
     Return<void> prepareForReading(uint32_t frameSize, uint32_t framesCount,
@@ -100,15 +108,18 @@ struct StreamIn : public IStreamIn {
     Return<Result> stop() override;
     Return<void> createMmapBuffer(int32_t minSizeFrames, createMmapBuffer_cb _hidl_cb) override;
     Return<void> getMmapPosition(getMmapPosition_cb _hidl_cb) override;
+#if MAJOR_VERSION >= 4
     Return<void> updateSinkMetadata(const SinkMetadata& sinkMetadata) override;
     Return<void> getActiveMicrophones(getActiveMicrophones_cb _hidl_cb) override;
+#endif
+#if MAJOR_VERSION >= 5
     Return<Result> setMicrophoneDirection(MicrophoneDirection direction) override;
     Return<Result> setMicrophoneFieldDimension(float zoom) override;
+#endif
     static Result getCapturePositionImpl(audio_stream_in_t* stream, uint64_t* frames,
                                          uint64_t* time);
 
    private:
-    bool mIsClosed;
     const sp<Device> mDevice;
     audio_stream_in_t* mStream;
     const sp<Stream> mStreamCommon;
@@ -123,10 +134,10 @@ struct StreamIn : public IStreamIn {
     virtual ~StreamIn();
 };
 
-}  // namespace renesas
-}  // namespace V5_0
+}  // namespace implementation
+}  // namespace CPP_VERSION
 }  // namespace audio
 }  // namespace hardware
 }  // namespace android
 
-#endif  // ANDROID_HARDWARE_AUDIO_V5_0_STREAMIN_H
+#endif  // ANDROID_HARDWARE_AUDIO_STREAMIN_H

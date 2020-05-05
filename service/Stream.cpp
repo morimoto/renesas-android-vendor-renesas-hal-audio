@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,27 +14,26 @@
  * limitations under the License.
  */
 
-#include <inttypes.h>
-
 #define LOG_TAG "StreamHAL"
 
-#include "Conversions.h"
-#include "EffectMap.h"
-#include "Stream.h"
-#include "Util.h"
+#include "core/default/Stream.h"
+#include "common/all-versions/default/EffectMap.h"
+#include "core/default/Conversions.h"
+#include "core/default/Util.h"
 
+#include <inttypes.h>
+
+#include <android/log.h>
 #include <hardware/audio.h>
 #include <hardware/audio_effect.h>
-#include <android/log.h>
-#include <utils/Vector.h>
 #include <media/AudioContainers.h>
 #include <media/TypeConverter.h>
 
 namespace android {
 namespace hardware {
 namespace audio {
-namespace V5_0 {
-namespace renesas {
+namespace CPP_VERSION {
+namespace implementation {
 
 Stream::Stream(audio_stream_t* stream) : mStream(stream) {}
 
@@ -46,7 +45,6 @@ Stream::~Stream() {
 Result Stream::analyzeStatus(const char* funcName, int status) {
     return util::analyzeStatus("stream", funcName, status);
 }
-
 
 // static
 Result Stream::analyzeStatus(const char* funcName, int status,
@@ -62,7 +60,7 @@ int Stream::halSetParameters(const char* keysAndValues) {
     return mStream->set_parameters(mStream, keysAndValues);
 }
 
-// Methods from ::android::hardware::audio::AUDIO_HAL_VERSION::IStream follow.
+// Methods from ::android::hardware::audio::CPP_VERSION::IStream follow.
 Return<uint64_t> Stream::getFrameSize() {
     // Needs to be implemented by interface subclasses. But can't be declared as pure virtual,
     // since interface subclasses implementation do not inherit from this class.
@@ -84,6 +82,15 @@ Return<uint32_t> Stream::getSampleRate() {
     return mStream->get_sample_rate(mStream);
 }
 
+#if MAJOR_VERSION == 2
+Return<void> Stream::getSupportedSampleRates(getSupportedSampleRates_cb _hidl_cb) {
+    return getSupportedSampleRates(getFormat(), _hidl_cb);
+}
+Return<void> Stream::getSupportedChannelMasks(getSupportedChannelMasks_cb _hidl_cb) {
+    return getSupportedChannelMasks(getFormat(), _hidl_cb);
+}
+#endif
+
 Return<void> Stream::getSupportedSampleRates(AudioFormat format,
                                              getSupportedSampleRates_cb _hidl_cb) {
     AudioParameter context;
@@ -103,7 +110,11 @@ Return<void> Stream::getSupportedSampleRates(AudioFormat format,
             result = Result::NOT_SUPPORTED;
         }
     }
+#if MAJOR_VERSION == 2
+    _hidl_cb(sampleRates);
+#elif MAJOR_VERSION >= 4
     _hidl_cb(result, sampleRates);
+#endif
     return Void();
 }
 
@@ -129,7 +140,11 @@ Return<void> Stream::getSupportedChannelMasks(AudioFormat format,
             result = Result::NOT_SUPPORTED;
         }
     }
+#if MAJOR_VERSION == 2
+    _hidl_cb(channelMasks);
+#elif MAJOR_VERSION >= 4
     _hidl_cb(result, channelMasks);
+#endif
     return Void();
 }
 
@@ -160,8 +175,17 @@ Return<void> Stream::getSupportedFormats(getSupportedFormats_cb _hidl_cb) {
         for (size_t i = 0; i < halFormats.size(); ++i) {
             formats[i] = AudioFormat(halFormats[i]);
         }
+        // Legacy get_parameter does not return a status_t, thus can not advertise of failure.
+        // Note that the method must not return an empty list if this capability is supported.
+        if (formats.size() == 0) {
+            result = Result::NOT_SUPPORTED;
+        }
     }
+#if MAJOR_VERSION <= 5
     _hidl_cb(formats);
+#elif MAJOR_VERSION >= 6
+    _hidl_cb(result, formats);
+#endif
     return Void();
 }
 
@@ -206,6 +230,32 @@ Return<Result> Stream::setHwAvSync(uint32_t hwAvSync) {
     return setParam(AudioParameter::keyStreamHwAvSync, static_cast<int>(hwAvSync));
 }
 
+#if MAJOR_VERSION == 2
+Return<AudioDevice> Stream::getDevice() {
+    int device = 0;
+    Result retval = getParam(AudioParameter::keyRouting, &device);
+    return retval == Result::OK ? static_cast<AudioDevice>(device) : AudioDevice::NONE;
+}
+
+Return<Result> Stream::setDevice(const DeviceAddress& address) {
+    return setParam(AudioParameter::keyRouting, address);
+}
+
+Return<void> Stream::getParameters(const hidl_vec<hidl_string>& keys, getParameters_cb _hidl_cb) {
+    getParametersImpl({} /* context */, keys, _hidl_cb);
+    return Void();
+}
+
+Return<Result> Stream::setParameters(const hidl_vec<ParameterValue>& parameters) {
+    return setParametersImpl({} /* context */, parameters);
+}
+
+Return<Result> Stream::setConnectedState(const DeviceAddress& address, bool connected) {
+    return setParam(
+            connected ? AudioParameter::keyDeviceConnect : AudioParameter::keyDeviceDisconnect,
+            address);
+}
+#elif MAJOR_VERSION >= 4
 Return<void> Stream::getDevices(getDevices_cb _hidl_cb) {
     int device = 0;
     Result retval = getParam(AudioParameter::keyRouting, &device);
@@ -241,6 +291,7 @@ Return<Result> Stream::setParameters(const hidl_vec<ParameterValue>& context,
                                      const hidl_vec<ParameterValue>& parameters) {
     return setParametersImpl(context, parameters);
 }
+#endif
 
 Return<Result> Stream::start() {
     return Result::NOT_SUPPORTED;
@@ -250,7 +301,7 @@ Return<Result> Stream::stop() {
     return Result::NOT_SUPPORTED;
 }
 
-Return<void> Stream::createMmapBuffer(int32_t minSizeFrames__unused,
+Return<void> Stream::createMmapBuffer(int32_t minSizeFrames __unused,
                                       createMmapBuffer_cb _hidl_cb) {
     Result retval(Result::NOT_SUPPORTED);
     MmapBufferInfo info;
@@ -276,8 +327,14 @@ Return<void> Stream::debug(const hidl_handle& fd, const hidl_vec<hidl_string>& /
     return Void();
 }
 
-} // namespace renesas
-}  // namespace V5_0
+#if MAJOR_VERSION == 2
+Return<void> Stream::debugDump(const hidl_handle& fd) {
+    return debug(fd, {} /* options */);
+}
+#endif
+
+}  // namespace implementation
+}  // namespace CPP_VERSION
 }  // namespace audio
 }  // namespace hardware
 }  // namespace android

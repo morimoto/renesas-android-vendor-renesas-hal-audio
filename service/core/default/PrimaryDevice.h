@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,45 +14,35 @@
  * limitations under the License.
  */
 
-#ifndef ANDROID_HARDWARE_AUDIO_V5_0_PRIMARYDEVICE_H
-#define ANDROID_HARDWARE_AUDIO_V5_0_PRIMARYDEVICE_H
+#ifndef ANDROID_HARDWARE_AUDIO_PRIMARYDEVICE_H
+#define ANDROID_HARDWARE_AUDIO_PRIMARYDEVICE_H
+
+#include PATH(android/hardware/audio/FILE_VERSION/IPrimaryDevice.h)
 
 #include "Device.h"
 
-#include <android/hardware/audio/5.0/IPrimaryDevice.h>
 #include <hidl/Status.h>
-#include <hidl/MQDescriptor.h>
 
+#include <hidl/MQDescriptor.h>
 
 namespace android {
 namespace hardware {
 namespace audio {
-namespace V5_0 {
-namespace renesas {
+namespace CPP_VERSION {
+namespace implementation {
 
-using ::android::hardware::audio::common::V5_0::AudioConfig;
-using ::android::hardware::audio::common::V5_0::AudioInputFlag;
-using ::android::hardware::audio::common::V5_0::AudioMode;
-using ::android::hardware::audio::common::V5_0::AudioOutputFlag;
-using ::android::hardware::audio::common::V5_0::AudioPort;
-using ::android::hardware::audio::common::V5_0::AudioPortConfig;
-using ::android::hardware::audio::common::V5_0::AudioSource;
-using ::android::hardware::audio::V5_0::IDevice;
-using ::android::hardware::audio::V5_0::IPrimaryDevice;
-using ::android::hardware::audio::V5_0::IStreamIn;
-using ::android::hardware::audio::V5_0::IStreamOut;
-using ::android::hardware::audio::V5_0::ParameterValue;
-using ::android::hardware::audio::V5_0::Result;
+using ::android::sp;
+using ::android::hardware::hidl_string;
+using ::android::hardware::hidl_vec;
 using ::android::hardware::Return;
 using ::android::hardware::Void;
-using ::android::hardware::hidl_vec;
-using ::android::hardware::hidl_string;
-using ::android::sp;
+using namespace ::android::hardware::audio::common::CPP_VERSION;
+using namespace ::android::hardware::audio::CPP_VERSION;
 
 struct PrimaryDevice : public IPrimaryDevice {
     explicit PrimaryDevice(audio_hw_device_t* device);
 
-    // Methods from ::android::hardware::audio::AUDIO_HAL_VERSION::IDevice follow.
+    // Methods from ::android::hardware::audio::CPP_VERSION::IDevice follow.
     Return<Result> initCheck() override;
     Return<Result> setMasterVolume(float volume) override;
     Return<void> getMasterVolume(getMasterVolume_cb _hidl_cb) override;
@@ -65,16 +55,20 @@ struct PrimaryDevice : public IPrimaryDevice {
 
     Return<void> openOutputStream(int32_t ioHandle, const DeviceAddress& device,
                                   const AudioConfig& config, AudioOutputFlagBitfield flags,
+#if MAJOR_VERSION >= 4
                                   const SourceMetadata& sourceMetadata,
+#endif
                                   openOutputStream_cb _hidl_cb) override;
 
     Return<void> openInputStream(int32_t ioHandle, const DeviceAddress& device,
                                  const AudioConfig& config, AudioInputFlagBitfield flags,
                                  AudioSource source, openInputStream_cb _hidl_cb);
+#if MAJOR_VERSION >= 4
     Return<void> openInputStream(int32_t ioHandle, const DeviceAddress& device,
                                  const AudioConfig& config, AudioInputFlagBitfield flags,
                                  const SinkMetadata& sinkMetadata,
                                  openInputStream_cb _hidl_cb) override;
+#endif
 
     Return<bool> supportsAudioPatches() override;
     Return<void> createAudioPatch(const hidl_vec<AudioPortConfig>& sources,
@@ -86,6 +80,13 @@ struct PrimaryDevice : public IPrimaryDevice {
 
     Return<Result> setScreenState(bool turnedOn) override;
 
+#if MAJOR_VERSION == 2
+    Return<AudioHwSync> getHwAvSync() override;
+    Return<void> getParameters(const hidl_vec<hidl_string>& keys,
+                               getParameters_cb _hidl_cb) override;
+    Return<Result> setParameters(const hidl_vec<ParameterValue>& parameters) override;
+    Return<void> debugDump(const hidl_handle& fd) override;
+#elif MAJOR_VERSION >= 4
     Return<void> getHwAvSync(getHwAvSync_cb _hidl_cb) override;
     Return<void> getParameters(const hidl_vec<ParameterValue>& context,
                                const hidl_vec<hidl_string>& keys,
@@ -94,10 +95,19 @@ struct PrimaryDevice : public IPrimaryDevice {
                                  const hidl_vec<ParameterValue>& parameters) override;
     Return<void> getMicrophones(getMicrophones_cb _hidl_cb) override;
     Return<Result> setConnectedState(const DeviceAddress& address, bool connected) override;
+#endif
+#if MAJOR_VERSION >= 6
+    Return<Result> close() override;
+    Return<Result> addDeviceEffect(AudioPortHandle device, uint64_t effectId) override;
+    Return<Result> removeDeviceEffect(AudioPortHandle device, uint64_t effectId) override;
+    Return<void> updateAudioPatch(int32_t previousPatch, const hidl_vec<AudioPortConfig>& sources,
+                                  const hidl_vec<AudioPortConfig>& sinks,
+                                  updateAudioPatch_cb _hidl_cb) override;
+#endif
 
     Return<void> debug(const hidl_handle& fd, const hidl_vec<hidl_string>& options) override;
 
-    // Methods from ::android::hardware::audio::AUDIO_HAL_VERSION::IPrimaryDevice follow.
+    // Methods from ::android::hardware::audio::CPP_VERSION::IPrimaryDevice follow.
     Return<Result> setVoiceVolume(float volume) override;
     Return<Result> setMode(AudioMode mode) override;
     Return<void> getBtScoNrecEnabled(getBtScoNrecEnabled_cb _hidl_cb) override;
@@ -109,12 +119,14 @@ struct PrimaryDevice : public IPrimaryDevice {
     Return<void> getHacEnabled(getHacEnabled_cb _hidl_cb) override;
     Return<Result> setHacEnabled(bool enabled) override;
 
+#if MAJOR_VERSION >= 4
     Return<Result> setBtScoHeadsetDebugName(const hidl_string& name) override;
     Return<void> getBtHfpEnabled(getBtHfpEnabled_cb _hidl_cb) override;
     Return<Result> setBtHfpEnabled(bool enabled) override;
     Return<Result> setBtHfpSampleRate(uint32_t sampleRateHz) override;
     Return<Result> setBtHfpVolume(float volume) override;
     Return<Result> updateRotation(IPrimaryDevice::Rotation rotation) override;
+#endif
 
    private:
     sp<Device> mDevice;
@@ -122,10 +134,10 @@ struct PrimaryDevice : public IPrimaryDevice {
     virtual ~PrimaryDevice();
 };
 
-}  // namespace renesas
-}  // namespace V5_0
+}  // namespace implementation
+}  // namespace CPP_VERSION
 }  // namespace audio
 }  // namespace hardware
 }  // namespace android
 
-#endif  // ANDROID_HARDWARE_AUDIO_V5_0_PRIMARYDEVICE_H
+#endif  // ANDROID_HARDWARE_AUDIO_PRIMARYDEVICE_H

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,35 +14,36 @@
  * limitations under the License.
  */
 
-#ifndef ANDROID_HARDWARE_AUDIO_V5_0_DEVICESFACTORY_H_
-#define ANDROID_HARDWARE_AUDIO_V5_0_DEVICESFACTORY_H_
+#ifndef ANDROID_HARDWARE_AUDIO_DEVICESFACTORY_H
+#define ANDROID_HARDWARE_AUDIO_DEVICESFACTORY_H
 
-#include <android/hardware/audio/5.0/IDevicesFactory.h>
-#include <hidl/Status.h>
-#include <hidl/MQDescriptor.h>
+#include PATH(android/hardware/audio/FILE_VERSION/IDevicesFactory.h)
 
 #include <hardware/audio.h>
 
+#include <hidl/Status.h>
+
+#include <hidl/MQDescriptor.h>
 namespace android {
 namespace hardware {
 namespace audio {
-namespace V5_0 {
-namespace renesas {
+namespace CPP_VERSION {
+namespace implementation {
 
-using ::android::hardware::audio::V5_0::IDevice;
-using ::android::hardware::audio::V5_0::IDevicesFactory;
-using ::android::hardware::audio::V5_0::Result;
+using ::android::sp;
+using ::android::hardware::hidl_string;
+using ::android::hardware::hidl_vec;
 using ::android::hardware::Return;
 using ::android::hardware::Void;
-using ::android::hardware::hidl_vec;
-using ::android::hardware::hidl_string;
-using ::android::sp;
-
-//class Device;
+using namespace ::android::hardware::audio::CPP_VERSION;
 
 struct DevicesFactory : public IDevicesFactory {
+#if MAJOR_VERSION == 2
+    Return<void> openDevice(IDevicesFactory::Device device, openDevice_cb _hidl_cb) override;
+#elif MAJOR_VERSION >= 4
     Return<void> openDevice(const hidl_string& device, openDevice_cb _hidl_cb) override;
     Return<void> openPrimaryDevice(openPrimaryDevice_cb _hidl_cb) override;
+#endif
 
    private:
     template <class DeviceShim, class Callback>
@@ -54,10 +55,10 @@ struct DevicesFactory : public IDevicesFactory {
 
 extern "C" IDevicesFactory* HIDL_FETCH_IDevicesFactory(const char* name);
 
-}  // namespace renesas
-}  // namespace V5_0
+}  // namespace implementation
+}  // namespace CPP_VERSION
 }  // namespace audio
 }  // namespace hardware
 }  // namespace android
 
-#endif  // ANDROID_HARDWARE_AUDIO_V5_0_DEVICESFACTORY_H
+#endif  // ANDROID_HARDWARE_AUDIO_DEVICESFACTORY_H

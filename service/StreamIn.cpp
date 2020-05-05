@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,30 +15,26 @@
  */
 
 #define LOG_TAG "StreamInHAL"
-#define ATRACE_TAG ATRACE_TAG_AUDIO
 
-#include "StreamIn.h"
-#include "Conversions.h"
-#include "Util.h"
-#include "HidlUtils.h"
+#include "core/default/StreamIn.h"
+#include "core/default/Conversions.h"
+#include "core/default/Util.h"
+#include "common/all-versions/HidlSupport.h"
+
+//#define LOG_NDEBUG 0
+#define ATRACE_TAG ATRACE_TAG_AUDIO
 
 #include <android/log.h>
 #include <hardware/audio.h>
 #include <utils/Trace.h>
-#include <hidl/HidlSupport.h>
-
 #include <memory>
 #include <cmath>
-
-using ::android::hardware::audio::V5_0::MessageQueueFlagBits;
 
 namespace android {
 namespace hardware {
 namespace audio {
-namespace V5_0 {
-namespace renesas {
-
-using ::android::hardware::audio::common::V5_0::ThreadInfo;
+namespace CPP_VERSION {
+namespace implementation {
 
 namespace {
 
@@ -143,8 +139,7 @@ bool ReadThread::threadLoop() {
 }  // namespace
 
 StreamIn::StreamIn(const sp<Device>& device, audio_stream_in_t* stream)
-    : mIsClosed(false),
-      mDevice(device),
+    : mDevice(device),
       mStream(stream),
       mStreamCommon(new Stream(&stream->common)),
       mStreamMmap(new StreamMmap<audio_stream_in_t>(stream)),
@@ -163,11 +158,13 @@ StreamIn::~StreamIn() {
         status_t status = EventFlag::deleteEventFlag(&mEfGroup);
         ALOGE_IF(status, "read MQ event flag deletion error: %s", strerror(-status));
     }
+#if MAJOR_VERSION <= 5
     mDevice->closeInputStream(mStream);
+#endif
     mStream = nullptr;
 }
 
-// Methods from ::android::hardware::audio::AUDIO_HAL_VERSION::IStream follow.
+// Methods from ::android::hardware::audio::CPP_VERSION::IStream follow.
 Return<uint64_t> StreamIn::getFrameSize() {
     return audio_stream_in_frame_size(mStream);
 }
@@ -183,6 +180,15 @@ Return<uint64_t> StreamIn::getBufferSize() {
 Return<uint32_t> StreamIn::getSampleRate() {
     return mStreamCommon->getSampleRate();
 }
+
+#if MAJOR_VERSION == 2
+Return<void> StreamIn::getSupportedChannelMasks(getSupportedChannelMasks_cb _hidl_cb) {
+    return mStreamCommon->getSupportedChannelMasks(_hidl_cb);
+}
+Return<void> StreamIn::getSupportedSampleRates(getSupportedSampleRates_cb _hidl_cb) {
+    return mStreamCommon->getSupportedSampleRates(_hidl_cb);
+}
+#endif
 
 Return<void> StreamIn::getSupportedChannelMasks(AudioFormat format,
                                                 getSupportedChannelMasks_cb _hidl_cb) {
@@ -237,6 +243,31 @@ Return<Result> StreamIn::setHwAvSync(uint32_t hwAvSync) {
     return mStreamCommon->setHwAvSync(hwAvSync);
 }
 
+#if MAJOR_VERSION == 2
+Return<Result> StreamIn::setConnectedState(const DeviceAddress& address, bool connected) {
+    return mStreamCommon->setConnectedState(address, connected);
+}
+
+Return<AudioDevice> StreamIn::getDevice() {
+    return mStreamCommon->getDevice();
+}
+
+Return<Result> StreamIn::setDevice(const DeviceAddress& address) {
+    return mStreamCommon->setDevice(address);
+}
+
+Return<void> StreamIn::getParameters(const hidl_vec<hidl_string>& keys, getParameters_cb _hidl_cb) {
+    return mStreamCommon->getParameters(keys, _hidl_cb);
+}
+
+Return<Result> StreamIn::setParameters(const hidl_vec<ParameterValue>& parameters) {
+    return mStreamCommon->setParameters(parameters);
+}
+
+Return<void> StreamIn::debugDump(const hidl_handle& fd) {
+    return mStreamCommon->debugDump(fd);
+}
+#elif MAJOR_VERSION >= 4
 Return<void> StreamIn::getDevices(getDevices_cb _hidl_cb) {
     return mStreamCommon->getDevices(_hidl_cb);
 }
@@ -253,6 +284,7 @@ Return<Result> StreamIn::setParameters(const hidl_vec<ParameterValue>& context,
                                        const hidl_vec<ParameterValue>& parameters) {
     return mStreamCommon->setParameters(context, parameters);
 }
+#endif
 
 Return<Result> StreamIn::start() {
     return mStreamMmap->start();
@@ -272,18 +304,20 @@ Return<void> StreamIn::getMmapPosition(getMmapPosition_cb _hidl_cb) {
 }
 
 Return<Result> StreamIn::close() {
-    if (mIsClosed) return Result::INVALID_STATE;
-    mIsClosed = true;
-    if (mReadThread.get()) {
-        mStopReadThread.store(true, std::memory_order_release);
+    if (mStopReadThread.load(std::memory_order_relaxed)) {  // only this thread writes
+        return Result::INVALID_STATE;
     }
+    mStopReadThread.store(true, std::memory_order_release);
     if (mEfGroup) {
         mEfGroup->wake(static_cast<uint32_t>(MessageQueueFlagBits::NOT_FULL));
     }
+#if MAJOR_VERSION >= 6
+    mDevice->closeInputStream(mStream);
+#endif
     return Result::OK;
 }
 
-// Methods from ::android::hardware::audio::AUDIO_HAL_VERSION::IStreamIn follow.
+// Methods from ::android::hardware::audio::CPP_VERSION::IStreamIn follow.
 Return<void> StreamIn::getAudioSource(getAudioSource_cb _hidl_cb) {
     int halSource;
     Result retval = mStreamCommon->getParam(AudioParameter::keyInputSource, &halSource);
@@ -312,7 +346,6 @@ Return<void> StreamIn::prepareForReading(uint32_t frameSize, uint32_t framesCoun
     auto sendError = [&threadInfo, &_hidl_cb](Result result) {
         _hidl_cb(result, CommandMQ::Descriptor(), DataMQ::Descriptor(), StatusMQ::Descriptor(),
                  threadInfo);
-
     };
 
     // Create message queues.
@@ -418,7 +451,7 @@ Return<void> StreamIn::debug(const hidl_handle& fd, const hidl_vec<hidl_string>&
     return mStreamCommon->debug(fd, options);
 }
 
-
+#if MAJOR_VERSION >= 4
 Return<void> StreamIn::updateSinkMetadata(const SinkMetadata& sinkMetadata) {
     if (mStream->update_sink_metadata == nullptr) {
         return Void();  // not supported by the HAL
@@ -426,11 +459,23 @@ Return<void> StreamIn::updateSinkMetadata(const SinkMetadata& sinkMetadata) {
     std::vector<record_track_metadata> halTracks;
     halTracks.reserve(sinkMetadata.tracks.size());
     for (auto& metadata : sinkMetadata.tracks) {
-        halTracks.push_back(
-            {.source = static_cast<audio_source_t>(metadata.source), .gain = metadata.gain});
+        record_track_metadata halTrackMetadata = {
+            .source = static_cast<audio_source_t>(metadata.source), .gain = metadata.gain};
+#if MAJOR_VERSION >= 5
+        if (metadata.destination.getDiscriminator() ==
+            RecordTrackMetadata::Destination::hidl_discriminator::device) {
+            halTrackMetadata.dest_device =
+                static_cast<audio_devices_t>(metadata.destination.device().device);
+            strncpy(halTrackMetadata.dest_device_address,
+                    deviceAddressToHal(metadata.destination.device()).c_str(),
+                    AUDIO_DEVICE_MAX_ADDRESS_LEN);
+        }
+#endif
+        halTracks.push_back(halTrackMetadata);
     }
     const sink_metadata_t halMetadata = {
-        .track_count = halTracks.size(), .tracks = halTracks.data(),
+        .track_count = halTracks.size(),
+        .tracks = halTracks.data(),
     };
     mStream->update_sink_metadata(mStream, &halMetadata);
     return Void();
@@ -454,7 +499,9 @@ Return<void> StreamIn::getActiveMicrophones(getActiveMicrophones_cb _hidl_cb) {
     _hidl_cb(retval, microphones);
     return Void();
 }
+#endif
 
+#if MAJOR_VERSION >= 5
 Return<Result> StreamIn::setMicrophoneDirection(MicrophoneDirection direction) {
     if (mStream->set_microphone_direction == nullptr) {
         return Result::NOT_SUPPORTED;
@@ -481,8 +528,10 @@ Return<Result> StreamIn::setMicrophoneFieldDimension(float zoom) {
                                  mStream->set_microphone_field_dimension(mStream, zoom));
 }
 
-}  // namespace renesas
-}  // namespace V5_0
+#endif
+
+}  // namespace implementation
+}  // namespace CPP_VERSION
 }  // namespace audio
 }  // namespace hardware
 }  // namespace android

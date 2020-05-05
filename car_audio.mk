@@ -14,7 +14,6 @@
 # limitations under the License.
 
 USE_XML_AUDIO_POLICY_CONF := 1
-AUDIO_HAL_INTERFACE_VERSION := V4_0
 
 PRODUCT_PACKAGES += \
     audio.primary.${TARGET_PRODUCT} \

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,58 +14,44 @@
  * limitations under the License.
  */
 
-#ifndef ANDROID_HARDWARE_AUDIO_V5_0_DEVICE_H
-#define ANDROID_HARDWARE_AUDIO_V5_0_DEVICE_H
+#ifndef ANDROID_HARDWARE_AUDIO_DEVICE_H
+#define ANDROID_HARDWARE_AUDIO_DEVICE_H
+
+#include PATH(android/hardware/audio/FILE_VERSION/IDevice.h)
 
 #include "ParametersUtil.h"
-#include "HidlUtils.h"
-#include "Bitfields.h"
-#include "HidlSupport.h"
-
-#include <media/AudioParameter.h>
-#include <hardware/audio.h>
-
-#include <android/hardware/audio/5.0/IDevice.h>
-#include <hidl/Status.h>
-#include <hidl/MQDescriptor.h>
 
 #include <memory>
+
+#include <hardware/audio.h>
+#include <media/AudioParameter.h>
+
+#include <hidl/Status.h>
+
+#include <hidl/MQDescriptor.h>
+
+#include <VersionUtils.h>
 
 namespace android {
 namespace hardware {
 namespace audio {
-namespace V5_0 {
-namespace renesas {
+namespace CPP_VERSION {
+namespace implementation {
 
-using ::android::hardware::audio::common::V5_0::AudioConfig;
-using ::android::hardware::audio::common::V5_0::AudioHwSync;
-using ::android::hardware::audio::common::V5_0::AudioInputFlag;
-using ::android::hardware::audio::common::V5_0::AudioOutputFlag;
-using ::android::hardware::audio::common::V5_0::AudioPatchHandle;
-using ::android::hardware::audio::common::V5_0::AudioPort;
-using ::android::hardware::audio::common::V5_0::AudioPortConfig;
-using ::android::hardware::audio::common::V5_0::AudioSource;
-using ::android::hardware::audio::common::V5_0::DeviceAddress;
-using ::android::hardware::audio::common::V5_0::SourceMetadata;
-using ::android::hardware::audio::common::V5_0::SinkMetadata;
-using ::android::hardware::audio::common::V5_0::implementation::HidlUtils;
-using ::android::hardware::audio::common::V5_0::implementation::AudioInputFlagBitfield;
-using ::android::hardware::audio::common::V5_0::implementation::AudioOutputFlagBitfield;
-using ::android::hardware::audio::V5_0::IDevice;
-using ::android::hardware::audio::V5_0::IStreamIn;
-using ::android::hardware::audio::V5_0::IStreamOut;
-using ::android::hardware::audio::V5_0::ParameterValue;
-using ::android::hardware::audio::V5_0::Result;
+using ::android::sp;
+using ::android::hardware::hidl_string;
+using ::android::hardware::hidl_vec;
 using ::android::hardware::Return;
 using ::android::hardware::Void;
-using ::android::hardware::hidl_vec;
-using ::android::hardware::hidl_string;
-using ::android::sp;
+using ::android::hardware::audio::common::CPP_VERSION::implementation::AudioInputFlagBitfield;
+using ::android::hardware::audio::common::CPP_VERSION::implementation::AudioOutputFlagBitfield;
+using namespace ::android::hardware::audio::common::CPP_VERSION;
+using namespace ::android::hardware::audio::CPP_VERSION;
 
 struct Device : public IDevice, public ParametersUtil {
     explicit Device(audio_hw_device_t* device);
 
-    // Methods from ::android::hardware::audio::AUDIO_HAL_VERSION::IDevice follow.
+    // Methods from ::android::hardware::audio::CPP_VERSION::IDevice follow.
     Return<Result> initCheck() override;
     Return<Result> setMasterVolume(float volume) override;
     Return<void> getMasterVolume(getMasterVolume_cb _hidl_cb) override;
@@ -76,10 +62,22 @@ struct Device : public IDevice, public ParametersUtil {
     Return<void> getInputBufferSize(const AudioConfig& config,
                                     getInputBufferSize_cb _hidl_cb) override;
 
-    // V2 openInputStream is called by V4 input stream thus present in both versions
+    std::tuple<Result, sp<IStreamOut>> openOutputStreamImpl(int32_t ioHandle,
+                                                            const DeviceAddress& device,
+                                                            const AudioConfig& config,
+                                                            AudioOutputFlagBitfield flags,
+                                                            AudioConfig* suggestedConfig);
+    std::tuple<Result, sp<IStreamIn>> openInputStreamImpl(
+        int32_t ioHandle, const DeviceAddress& device, const AudioConfig& config,
+        AudioInputFlagBitfield flags, AudioSource source, AudioConfig* suggestedConfig);
+#if MAJOR_VERSION == 2
+    Return<void> openOutputStream(int32_t ioHandle, const DeviceAddress& device,
+                                  const AudioConfig& config, AudioOutputFlagBitfield flags,
+                                  openOutputStream_cb _hidl_cb) override;
     Return<void> openInputStream(int32_t ioHandle, const DeviceAddress& device,
                                  const AudioConfig& config, AudioInputFlagBitfield flags,
-                                 AudioSource source, openInputStream_cb _hidl_cb);
+                                 AudioSource source, openInputStream_cb _hidl_cb) override;
+#elif MAJOR_VERSION >= 4
     Return<void> openOutputStream(int32_t ioHandle, const DeviceAddress& device,
                                   const AudioConfig& config, AudioOutputFlagBitfield flags,
                                   const SourceMetadata& sourceMetadata,
@@ -88,6 +86,7 @@ struct Device : public IDevice, public ParametersUtil {
                                  const AudioConfig& config, AudioInputFlagBitfield flags,
                                  const SinkMetadata& sinkMetadata,
                                  openInputStream_cb _hidl_cb) override;
+#endif
 
     Return<bool> supportsAudioPatches() override;
     Return<void> createAudioPatch(const hidl_vec<AudioPortConfig>& sources,
@@ -99,6 +98,13 @@ struct Device : public IDevice, public ParametersUtil {
 
     Return<Result> setScreenState(bool turnedOn) override;
 
+#if MAJOR_VERSION == 2
+    Return<AudioHwSync> getHwAvSync() override;
+    Return<void> getParameters(const hidl_vec<hidl_string>& keys,
+                               getParameters_cb _hidl_cb) override;
+    Return<Result> setParameters(const hidl_vec<ParameterValue>& parameters) override;
+    Return<void> debugDump(const hidl_handle& fd) override;
+#elif MAJOR_VERSION >= 4
     Return<void> getHwAvSync(getHwAvSync_cb _hidl_cb) override;
     Return<void> getParameters(const hidl_vec<ParameterValue>& context,
                                const hidl_vec<hidl_string>& keys,
@@ -107,19 +113,35 @@ struct Device : public IDevice, public ParametersUtil {
                                  const hidl_vec<ParameterValue>& parameters) override;
     Return<void> getMicrophones(getMicrophones_cb _hidl_cb) override;
     Return<Result> setConnectedState(const DeviceAddress& address, bool connected) override;
-
+#endif
+#if MAJOR_VERSION >= 6
+    Return<Result> close() override;
+    Return<Result> addDeviceEffect(AudioPortHandle device, uint64_t effectId) override;
+    Return<Result> removeDeviceEffect(AudioPortHandle device, uint64_t effectId) override;
+    Return<void> updateAudioPatch(int32_t previousPatch, const hidl_vec<AudioPortConfig>& sources,
+                                  const hidl_vec<AudioPortConfig>& sinks,
+                                  createAudioPatch_cb _hidl_cb) override;
+#endif
     Return<void> debug(const hidl_handle& fd, const hidl_vec<hidl_string>& options) override;
 
     // Utility methods for extending interfaces.
-    Result analyzeStatus(const char* funcName, int status);
+    Result analyzeStatus(const char* funcName, int status,
+                         const std::vector<int>& ignoreErrors = {});
     void closeInputStream(audio_stream_in_t* stream);
     void closeOutputStream(audio_stream_out_t* stream);
     audio_hw_device_t* device() const { return mDevice; }
 
-   private:
+  private:
+    bool mIsClosed;
     audio_hw_device_t* mDevice;
+    int mOpenedStreamsCount = 0;
 
     virtual ~Device();
+
+    Result doClose();
+    std::tuple<Result, AudioPatchHandle> createOrUpdateAudioPatch(
+            AudioPatchHandle patch, const hidl_vec<AudioPortConfig>& sources,
+            const hidl_vec<AudioPortConfig>& sinks);
 
     // Methods from ParametersUtil.
     char* halGetParameters(const char* keys) override;
@@ -128,10 +150,10 @@ struct Device : public IDevice, public ParametersUtil {
     uint32_t version() const { return mDevice->common.version; }
 };
 
-}  // namespace renesas
-}  // namespace V5_0
+}  // namespace implementation
+}  // namespace CPP_VERSION
 }  // namespace audio
 }  // namespace hardware
 }  // namespace android
 
-#endif  // ANDROID_HARDWARE_AUDIO_V5_0_DEVICE_H
+#endif  // ANDROID_HARDWARE_AUDIO_DEVICE_H

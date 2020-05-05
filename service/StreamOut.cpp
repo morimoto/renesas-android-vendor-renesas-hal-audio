@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,24 +15,26 @@
  */
 
 #define LOG_TAG "StreamOutHAL"
+
+#include "core/default/StreamOut.h"
+#include "core/default/Util.h"
+
+//#define LOG_NDEBUG 0
 #define ATRACE_TAG ATRACE_TAG_AUDIO
 
-#include "StreamOut.h"
-#include "Util.h"
+#include <string.h>
+
+#include <memory>
 
 #include <android/log.h>
 #include <hardware/audio.h>
 #include <utils/Trace.h>
 
-#include <memory>
-
 namespace android {
 namespace hardware {
 namespace audio {
-namespace V5_0 {
-namespace renesas {
-
-using ::android::hardware::audio::common::V5_0::ThreadInfo;
+namespace CPP_VERSION {
+namespace implementation {
 
 namespace {
 
@@ -138,8 +140,7 @@ bool WriteThread::threadLoop() {
 }  // namespace
 
 StreamOut::StreamOut(const sp<Device>& device, audio_stream_out_t* stream)
-    : mIsClosed(false),
-      mDevice(device),
+    : mDevice(device),
       mStream(stream),
       mStreamCommon(new Stream(&stream->common)),
       mStreamMmap(new StreamMmap<audio_stream_out_t>(stream)),
@@ -148,7 +149,7 @@ StreamOut::StreamOut(const sp<Device>& device, audio_stream_out_t* stream)
 
 StreamOut::~StreamOut() {
     ATRACE_CALL();
-    close();
+    (void)close();
     if (mWriteThread.get()) {
         ATRACE_NAME("mWriteThread->join");
         status_t status = mWriteThread->join();
@@ -159,14 +160,16 @@ StreamOut::~StreamOut() {
         ALOGE_IF(status, "write MQ event flag deletion error: %s", strerror(-status));
     }
     mCallback.clear();
+#if MAJOR_VERSION <= 5
     mDevice->closeOutputStream(mStream);
     // Closing the output stream in the HAL waits for the callback to finish,
     // and joins the callback thread. Thus is it guaranteed that the callback
     // thread will not be accessing our object anymore.
+#endif
     mStream = nullptr;
 }
 
-// Methods from ::android::hardware::audio::AUDIO_HAL_VERSION::IStream follow.
+// Methods from ::android::hardware::audio::CPP_VERSION::IStream follow.
 Return<uint64_t> StreamOut::getFrameSize() {
     return audio_stream_out_frame_size(mStream);
 }
@@ -182,6 +185,15 @@ Return<uint64_t> StreamOut::getBufferSize() {
 Return<uint32_t> StreamOut::getSampleRate() {
     return mStreamCommon->getSampleRate();
 }
+
+#if MAJOR_VERSION == 2
+Return<void> StreamOut::getSupportedChannelMasks(getSupportedChannelMasks_cb _hidl_cb) {
+    return mStreamCommon->getSupportedChannelMasks(_hidl_cb);
+}
+Return<void> StreamOut::getSupportedSampleRates(getSupportedSampleRates_cb _hidl_cb) {
+    return mStreamCommon->getSupportedSampleRates(_hidl_cb);
+}
+#endif
 
 Return<void> StreamOut::getSupportedChannelMasks(AudioFormat format,
                                                  getSupportedChannelMasks_cb _hidl_cb) {
@@ -236,7 +248,32 @@ Return<Result> StreamOut::setHwAvSync(uint32_t hwAvSync) {
     return mStreamCommon->setHwAvSync(hwAvSync);
 }
 
+#if MAJOR_VERSION == 2
+Return<Result> StreamOut::setConnectedState(const DeviceAddress& address, bool connected) {
+    return mStreamCommon->setConnectedState(address, connected);
+}
 
+Return<AudioDevice> StreamOut::getDevice() {
+    return mStreamCommon->getDevice();
+}
+
+Return<Result> StreamOut::setDevice(const DeviceAddress& address) {
+    return mStreamCommon->setDevice(address);
+}
+
+Return<void> StreamOut::getParameters(const hidl_vec<hidl_string>& keys,
+                                      getParameters_cb _hidl_cb) {
+    return mStreamCommon->getParameters(keys, _hidl_cb);
+}
+
+Return<Result> StreamOut::setParameters(const hidl_vec<ParameterValue>& parameters) {
+    return mStreamCommon->setParameters(parameters);
+}
+
+Return<void> StreamOut::debugDump(const hidl_handle& fd) {
+    return mStreamCommon->debugDump(fd);
+}
+#elif MAJOR_VERSION >= 4
 Return<void> StreamOut::getDevices(getDevices_cb _hidl_cb) {
     return mStreamCommon->getDevices(_hidl_cb);
 }
@@ -254,20 +291,23 @@ Return<Result> StreamOut::setParameters(const hidl_vec<ParameterValue>& context,
                                         const hidl_vec<ParameterValue>& parameters) {
     return mStreamCommon->setParameters(context, parameters);
 }
+#endif
 
 Return<Result> StreamOut::close() {
-    if (mIsClosed) return Result::INVALID_STATE;
-    mIsClosed = true;
-    if (mWriteThread.get()) {
-        mStopWriteThread.store(true, std::memory_order_release);
+    if (mStopWriteThread.load(std::memory_order_relaxed)) {  // only this thread writes
+        return Result::INVALID_STATE;
     }
+    mStopWriteThread.store(true, std::memory_order_release);
     if (mEfGroup) {
         mEfGroup->wake(static_cast<uint32_t>(MessageQueueFlagBits::NOT_EMPTY));
     }
+#if MAJOR_VERSION >= 6
+    mDevice->closeOutputStream(mStream);
+#endif
     return Result::OK;
 }
 
-// Methods from ::android::hardware::audio::AUDIO_HAL_VERSION::IStreamOut follow.
+// Methods from ::android::hardware::audio::CPP_VERSION::IStreamOut follow.
 Return<uint32_t> StreamOut::getLatency() {
     return mStream->get_latency(mStream);
 }
@@ -280,7 +320,8 @@ Return<Result> StreamOut::setVolume(float left, float right) {
         ALOGW("Can not set a stream output volume {%f, %f} outside [0,1]", left, right);
         return Result::INVALID_ARGUMENTS;
     }
-    return Stream::analyzeStatus("set_volume", mStream->set_volume(mStream, left, right));
+    return Stream::analyzeStatus("set_volume", mStream->set_volume(mStream, left, right),
+                                 {ENOSYS} /*ignore*/);
 }
 
 Return<void> StreamOut::prepareForWriting(uint32_t frameSize, uint32_t framesCount,
@@ -292,7 +333,6 @@ Return<void> StreamOut::prepareForWriting(uint32_t frameSize, uint32_t framesCou
     auto sendError = [&threadInfo, &_hidl_cb](Result result) {
         _hidl_cb(result, CommandMQ::Descriptor(), DataMQ::Descriptor(), StatusMQ::Descriptor(),
                  threadInfo);
-
     };
 
     // Create message queues.
@@ -366,7 +406,8 @@ Return<void> StreamOut::prepareForWriting(uint32_t frameSize, uint32_t framesCou
 Return<void> StreamOut::getRenderPosition(getRenderPosition_cb _hidl_cb) {
     uint32_t halDspFrames;
     Result retval = Stream::analyzeStatus("get_render_position",
-                                          mStream->get_render_position(mStream, &halDspFrames));
+                                          mStream->get_render_position(mStream, &halDspFrames),
+                                          {ENOSYS} /*ignore*/);
     _hidl_cb(retval, halDspFrames);
     return Void();
 }
@@ -376,7 +417,8 @@ Return<void> StreamOut::getNextWriteTimestamp(getNextWriteTimestamp_cb _hidl_cb)
     int64_t timestampUs = 0;
     if (mStream->get_next_write_timestamp != NULL) {
         retval = Stream::analyzeStatus("get_next_write_timestamp",
-                                       mStream->get_next_write_timestamp(mStream, &timestampUs));
+                                       mStream->get_next_write_timestamp(mStream, &timestampUs),
+                                       {ENOSYS} /*ignore*/);
     }
     _hidl_cb(retval, timestampUs);
     return Void();
@@ -390,7 +432,7 @@ Return<Result> StreamOut::setCallback(const sp<IStreamOutCallback>& callback) {
     if (result == 0) {
         mCallback = callback;
     }
-    return Stream::analyzeStatus("set_callback", result);
+    return Stream::analyzeStatus("set_callback", result, {ENOSYS} /*ignore*/);
 }
 
 Return<Result> StreamOut::clearCallback() {
@@ -413,20 +455,22 @@ int StreamOut::asyncCallback(stream_callback_event_t event, void*, void* cookie)
     sp<IStreamOutCallback> callback = self->mCallback;
     if (callback.get() == nullptr) return 0;
     ALOGV("asyncCallback() event %d", event);
+    Return<void> result;
     switch (event) {
         case STREAM_CBK_EVENT_WRITE_READY:
-            callback->onWriteReady();
+            result = callback->onWriteReady();
             break;
         case STREAM_CBK_EVENT_DRAIN_READY:
-            callback->onDrainReady();
+            result = callback->onDrainReady();
             break;
         case STREAM_CBK_EVENT_ERROR:
-            callback->onError();
+            result = callback->onError();
             break;
         default:
             ALOGW("asyncCallback() unknown event %d", event);
             break;
     }
+    ALOGW_IF(!result.isOk(), "Client callback failed: %s", result.description().c_str());
     return 0;
 }
 
@@ -436,13 +480,15 @@ Return<void> StreamOut::supportsPauseAndResume(supportsPauseAndResume_cb _hidl_c
 }
 
 Return<Result> StreamOut::pause() {
-    return mStream->pause != NULL ? Stream::analyzeStatus("pause", mStream->pause(mStream))
-                                  : Result::NOT_SUPPORTED;
+    return mStream->pause != NULL
+                   ? Stream::analyzeStatus("pause", mStream->pause(mStream), {ENOSYS} /*ignore*/)
+                   : Result::NOT_SUPPORTED;
 }
 
 Return<Result> StreamOut::resume() {
-    return mStream->resume != NULL ? Stream::analyzeStatus("resume", mStream->resume(mStream))
-                                   : Result::NOT_SUPPORTED;
+    return mStream->resume != NULL
+                   ? Stream::analyzeStatus("resume", mStream->resume(mStream), {ENOSYS} /*ignore*/)
+                   : Result::NOT_SUPPORTED;
 }
 
 Return<bool> StreamOut::supportsDrain() {
@@ -451,14 +497,17 @@ Return<bool> StreamOut::supportsDrain() {
 
 Return<Result> StreamOut::drain(AudioDrain type) {
     return mStream->drain != NULL
-               ? Stream::analyzeStatus(
-                     "drain", mStream->drain(mStream, static_cast<audio_drain_type_t>(type)))
-               : Result::NOT_SUPPORTED;
+                   ? Stream::analyzeStatus(
+                             "drain",
+                             mStream->drain(mStream, static_cast<audio_drain_type_t>(type)),
+                             {ENOSYS} /*ignore*/)
+                   : Result::NOT_SUPPORTED;
 }
 
 Return<Result> StreamOut::flush() {
-    return mStream->flush != NULL ? Stream::analyzeStatus("flush", mStream->flush(mStream))
-                                  : Result::NOT_SUPPORTED;
+    return mStream->flush != NULL
+                   ? Stream::analyzeStatus("flush", mStream->flush(mStream), {ENOSYS} /*ignore*/)
+                   : Result::NOT_SUPPORTED;
 }
 
 // static
@@ -468,7 +517,7 @@ Result StreamOut::getPresentationPositionImpl(audio_stream_out_t* stream, uint64
     // to return it sometimes. EAGAIN may be returned by A2DP audio HAL
     // implementation. ENODATA can also be reported while the writer is
     // continuously querying it, but the stream has been stopped.
-    static const std::vector<int> ignoredErrors{EINVAL, EAGAIN, ENODATA};
+    static const std::vector<int> ignoredErrors{EINVAL, EAGAIN, ENODATA, ENOSYS};
     Result retval(Result::NOT_SUPPORTED);
     if (stream->get_presentation_position == NULL) return retval;
     struct timespec halTimeStamp;
@@ -511,6 +560,7 @@ Return<void> StreamOut::debug(const hidl_handle& fd, const hidl_vec<hidl_string>
     return mStreamCommon->debug(fd, options);
 }
 
+#if MAJOR_VERSION >= 4
 Return<void> StreamOut::updateSourceMetadata(const SourceMetadata& sourceMetadata) {
     if (mStream->update_source_metadata == nullptr) {
         return Void();  // not supported by the HAL
@@ -525,7 +575,8 @@ Return<void> StreamOut::updateSourceMetadata(const SourceMetadata& sourceMetadat
         });
     }
     const source_metadata_t halMetadata = {
-        .track_count = halTracks.size(), .tracks = halTracks.data(),
+        .track_count = halTracks.size(),
+        .tracks = halTracks.data(),
     };
     mStream->update_source_metadata(mStream, &halMetadata);
     return Void();
@@ -533,9 +584,71 @@ Return<void> StreamOut::updateSourceMetadata(const SourceMetadata& sourceMetadat
 Return<Result> StreamOut::selectPresentation(int32_t /*presentationId*/, int32_t /*programId*/) {
     return Result::NOT_SUPPORTED;  // TODO: propagate to legacy
 }
+#endif
 
-}  // namespace renesas
-}  // namespace V5_0
+#if MAJOR_VERSION >= 6
+Return<void> StreamOut::getDualMonoMode(getDualMonoMode_cb _hidl_cb) {
+    _hidl_cb(Result::NOT_SUPPORTED, DualMonoMode::OFF);
+    return Void();
+}
+
+Return<Result> StreamOut::setDualMonoMode(DualMonoMode /*mode*/) {
+    return Result::NOT_SUPPORTED;
+}
+
+Return<void> StreamOut::getAudioDescriptionMixLevel(getAudioDescriptionMixLevel_cb _hidl_cb) {
+    _hidl_cb(Result::NOT_SUPPORTED, -std::numeric_limits<float>::infinity());
+    return Void();
+}
+
+Return<Result> StreamOut::setAudioDescriptionMixLevel(float /*leveldB*/) {
+    return Result::NOT_SUPPORTED;
+}
+
+Return<void> StreamOut::getPlaybackRateParameters(getPlaybackRateParameters_cb _hidl_cb) {
+    _hidl_cb(Result::NOT_SUPPORTED,
+             // Same as AUDIO_PLAYBACK_RATE_INITIALIZER
+             PlaybackRate{1.0f, 1.0f, TimestretchMode::DEFAULT, TimestretchFallbackMode::FAIL});
+    return Void();
+}
+
+Return<Result> StreamOut::setPlaybackRateParameters(const PlaybackRate& /*playbackRate*/) {
+    return Result::NOT_SUPPORTED;
+}
+
+Return<Result> StreamOut::setEventCallback(const sp<IStreamOutEventCallback>& callback) {
+    if (mStream->set_event_callback == nullptr) return Result::NOT_SUPPORTED;
+    int result = mStream->set_event_callback(mStream, StreamOut::asyncEventCallback, this);
+    if (result == 0) {
+        mEventCallback = callback;
+    }
+    return Stream::analyzeStatus("set_stream_out_callback", result, {ENOSYS} /*ignore*/);
+}
+
+// static
+int StreamOut::asyncEventCallback(stream_event_callback_type_t event, void* param, void* cookie) {
+    StreamOut* self = reinterpret_cast<StreamOut*>(cookie);
+    sp<IStreamOutEventCallback> eventCallback = self->mEventCallback;
+    if (eventCallback.get() == nullptr) return 0;
+    ALOGV("%s event %d", __func__, event);
+    Return<void> result;
+    switch (event) {
+        case STREAM_EVENT_CBK_TYPE_CODEC_FORMAT_CHANGED: {
+            hidl_vec<uint8_t> audioMetadata;
+            audioMetadata.setToExternal((uint8_t*)param, strlen((char*)param));
+            result = eventCallback->onCodecFormatChanged(audioMetadata);
+        } break;
+        default:
+            ALOGW("%s unknown event %d", __func__, event);
+            break;
+    }
+    ALOGW_IF(!result.isOk(), "Client callback failed: %s", result.description().c_str());
+    return 0;
+}
+#endif
+
+}  // namespace implementation
+}  // namespace CPP_VERSION
 }  // namespace audio
 }  // namespace hardware
 }  // namespace android

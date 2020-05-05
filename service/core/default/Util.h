@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,32 +14,24 @@
  * limitations under the License.
  */
 
-#ifndef ANDROID_HARDWARE_AUDIO_V5_0_UTIL_H
-#define ANDROID_HARDWARE_AUDIO_V5_0_UTIL_H
+#ifndef ANDROID_HARDWARE_AUDIO_UTIL_H
+#define ANDROID_HARDWARE_AUDIO_UTIL_H
 
-// #include <common/all-versions/IncludeGuard.h>
-
-#include <android/hardware/audio/5.0/IStreamOut.h>
-#include <hidl/MQDescriptor.h>
-#include <hidl/Status.h>
-#include <fmq/EventFlag.h>
-#include <fmq/MessageQueue.h>
-#include <utils/Thread.h>
-
-#include <system/audio.h>
+#include PATH(android/hardware/audio/FILE_VERSION/types.h)
 
 #include <algorithm>
 #include <vector>
-#include <atomic>
-#include <memory>
+
+#include <system/audio.h>
 
 namespace android {
 namespace hardware {
 namespace audio {
-namespace V5_0 {
-namespace renesas {
+namespace CPP_VERSION {
+namespace implementation {
 
-using ::android::hardware::audio::V5_0::Result;
+using namespace ::android::hardware::audio::common::CPP_VERSION;
+using namespace ::android::hardware::audio::CPP_VERSION;
 
 /** @return true if gain is between 0 and 1 included. */
 constexpr bool isGainNormalized(float gain) {
@@ -79,10 +71,10 @@ static inline Result analyzeStatus(const char* className, const char* funcName, 
 }
 
 }  // namespace util
-}  // namespace renesas
-}  // namespace V5_0
+}  // namespace implementation
+}  // namespace CPP_VERSION
 }  // namespace audio
 }  // namespace hardware
 }  // namespace android
 
-#endif  // ANDROID_HARDWARE_AUDIO_V5_0_UTIL_H
+#endif  // ANDROID_HARDWARE_AUDIO_UTIL_H

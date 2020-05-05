@@ -1,0 +1,8 @@
+cc_defaults {
+    name: "audio_hal_version_defaults",
+
+    cflags: [
+        "-DMAJOR_VERSION=5",
+        "-DMINOR_VERSION=0",
+    ],
+}

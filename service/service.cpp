@@ -16,7 +16,7 @@
 
 #define LOG_TAG "audiohalservice"
 
-#include "DevicesFactory.h"
+#include "core/default/DevicesFactory.h"
 
 #include <utils/StrongPointer.h>
 #include <hidl/HidlTransportSupport.h>
@@ -25,9 +25,9 @@
 using android::hardware::configureRpcThreadpool;
 using android::hardware::joinRpcThreadpool;
 
-using android::hardware::audio::V5_0::IDevicesFactory;
-using android::hardware::audio::V5_0::IDevice;
-using namespace android::hardware::audio::V5_0::renesas;
+using android::hardware::audio::CPP_VERSION::IDevicesFactory;
+using android::hardware::audio::CPP_VERSION::IDevice;
+using namespace android::hardware::audio::CPP_VERSION::implementation;
 using namespace android;
 
 using android::OK;

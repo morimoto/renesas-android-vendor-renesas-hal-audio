@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,42 +14,39 @@
  * limitations under the License.
  */
 
-#ifndef ANDROID_HARDWARE_AUDIO_V5_0_STREAM_H
-#define ANDROID_HARDWARE_AUDIO_V5_0_STREAM_H
+#ifndef ANDROID_HARDWARE_AUDIO_STREAM_H
+#define ANDROID_HARDWARE_AUDIO_STREAM_H
+
+#include PATH(android/hardware/audio/FILE_VERSION/IStream.h)
 
 #include "ParametersUtil.h"
-#include "EnumBitfield.h"
-
-#include <android/hardware/audio/5.0/IStream.h>
-#include <hardware/audio.h>
-#include <hidl/Status.h>
-#include <hidl/MQDescriptor.h>
 
 #include <vector>
+
+#include <hardware/audio.h>
+#include <hidl/Status.h>
+
+#include <hidl/MQDescriptor.h>
+
+#include <VersionUtils.h>
 
 namespace android {
 namespace hardware {
 namespace audio {
-namespace V5_0 {
-namespace renesas {
+namespace CPP_VERSION {
+namespace implementation {
 
-using ::android::hardware::audio::common::V5_0::AudioChannelMask;
-using ::android::hardware::audio::common::V5_0::AudioDevice;
-using ::android::hardware::audio::common::V5_0::AudioFormat;
-using ::android::hardware::audio::common::V5_0::DeviceAddress;
-using ::android::hardware::audio::V5_0::IStream;
-using ::android::hardware::audio::V5_0::ParameterValue;
-using ::android::hardware::audio::V5_0::Result;
+using ::android::sp;
+using ::android::hardware::hidl_string;
+using ::android::hardware::hidl_vec;
 using ::android::hardware::Return;
 using ::android::hardware::Void;
-using ::android::hardware::hidl_vec;
-using ::android::hardware::hidl_string;
-using ::android::sp;
-
-typedef hidl_bitfield<common::V5_0::AudioChannelMask> AudioChannelBitfield; //should be in some include or using
+using ::android::hardware::audio::common::CPP_VERSION::implementation::AudioChannelBitfield;
+using namespace ::android::hardware::audio::common::CPP_VERSION;
+using namespace ::android::hardware::audio::CPP_VERSION;
 
 struct Stream : public IStream, public ParametersUtil {
-explicit Stream(audio_stream_t* stream);
+    explicit Stream(audio_stream_t* stream);
 
     /** 1GiB is the maximum buffer size the HAL client is allowed to request.
      * This value has been chosen to be under SIZE_MAX and still big enough
@@ -58,12 +55,15 @@ explicit Stream(audio_stream_t* stream);
      */
     static constexpr uint32_t MAX_BUFFER_SIZE = 2 << 30 /* == 1GiB */;
 
-    // Methods from ::android::hardware::audio::AUDIO_HAL_VERSION::IStream follow.
+    // Methods from ::android::hardware::audio::CPP_VERSION::IStream follow.
     Return<uint64_t> getFrameSize() override;
     Return<uint64_t> getFrameCount() override;
     Return<uint64_t> getBufferSize() override;
     Return<uint32_t> getSampleRate() override;
-
+#if MAJOR_VERSION == 2
+    Return<void> getSupportedSampleRates(getSupportedSampleRates_cb _hidl_cb) override;
+    Return<void> getSupportedChannelMasks(getSupportedChannelMasks_cb _hidl_cb) override;
+#endif
     Return<void> getSupportedSampleRates(AudioFormat format, getSupportedSampleRates_cb _hidl_cb);
     Return<void> getSupportedChannelMasks(AudioFormat format, getSupportedChannelMasks_cb _hidl_cb);
     Return<Result> setSampleRate(uint32_t sampleRateHz) override;
@@ -76,7 +76,14 @@ explicit Stream(audio_stream_t* stream);
     Return<Result> addEffect(uint64_t effectId) override;
     Return<Result> removeEffect(uint64_t effectId) override;
     Return<Result> standby() override;
-
+#if MAJOR_VERSION == 2
+    Return<AudioDevice> getDevice() override;
+    Return<Result> setDevice(const DeviceAddress& address) override;
+    Return<void> getParameters(const hidl_vec<hidl_string>& keys,
+                               getParameters_cb _hidl_cb) override;
+    Return<Result> setParameters(const hidl_vec<ParameterValue>& parameters) override;
+    Return<Result> setConnectedState(const DeviceAddress& address, bool connected) override;
+#elif MAJOR_VERSION >= 4
     Return<void> getDevices(getDevices_cb _hidl_cb) override;
     Return<Result> setDevices(const hidl_vec<DeviceAddress>& devices) override;
     Return<void> getParameters(const hidl_vec<ParameterValue>& context,
@@ -84,7 +91,7 @@ explicit Stream(audio_stream_t* stream);
                                getParameters_cb _hidl_cb) override;
     Return<Result> setParameters(const hidl_vec<ParameterValue>& context,
                                  const hidl_vec<ParameterValue>& parameters) override;
-
+#endif
     Return<Result> setHwAvSync(uint32_t hwAvSync) override;
     Return<Result> start() override;
     Return<Result> stop() override;
@@ -93,6 +100,9 @@ explicit Stream(audio_stream_t* stream);
     Return<Result> close() override;
 
     Return<void> debug(const hidl_handle& fd, const hidl_vec<hidl_string>& options) override;
+#if MAJOR_VERSION == 2
+    Return<void> debugDump(const hidl_handle& fd) override;
+#endif
 
     // Utility methods for extending interfaces.
     static Result analyzeStatus(const char* funcName, int status);
@@ -147,18 +157,38 @@ Return<void> StreamMmap<T>::createMmapBuffer(int32_t minSizeFrames, size_t frame
     native_handle_t* hidlHandle = nullptr;
 
     if (mStream->create_mmap_buffer != NULL) {
+        if (minSizeFrames <= 0) {
+            retval = Result::INVALID_ARGUMENTS;
+            goto exit;
+        }
         struct audio_mmap_buffer_info halInfo;
         retval = Stream::analyzeStatus(
             "create_mmap_buffer", mStream->create_mmap_buffer(mStream, minSizeFrames, &halInfo));
         if (retval == Result::OK) {
             hidlHandle = native_handle_create(1, 0);
             hidlHandle->data[0] = halInfo.shared_memory_fd;
-            info.sharedMemory =
+
+            // Negative buffer size frame is a legacy hack to indicate that the buffer
+            // is shareable to applications before the relevant flag was introduced
+            bool applicationShareable =
+                halInfo.flags & AUDIO_MMAP_APPLICATION_SHAREABLE || halInfo.buffer_size_frames < 0;
+            halInfo.buffer_size_frames = abs(halInfo.buffer_size_frames);
+            info.sharedMemory =  // hidl_memory size must always be positive
                 hidl_memory("audio_buffer", hidlHandle, frameSize * halInfo.buffer_size_frames);
+#if MAJOR_VERSION == 2
+            if (applicationShareable) {
+                halInfo.buffer_size_frames *= -1;
+            }
+#else
+            info.flags =
+                halInfo.flags | (applicationShareable ? MmapBufferFlag::APPLICATION_SHAREABLE
+                                                      : MmapBufferFlag::NONE);
+#endif
             info.bufferSizeFrames = halInfo.buffer_size_frames;
             info.burstSizeFrames = halInfo.burst_size_frames;
         }
     }
+exit:
     _hidl_cb(retval, info);
     if (hidlHandle != nullptr) {
         native_handle_delete(hidlHandle);
@@ -184,11 +214,10 @@ Return<void> StreamMmap<T>::getMmapPosition(IStream::getMmapPosition_cb _hidl_cb
     return Void();
 }
 
-
-}  // namespace renesas
-}  // namespace V5_0
+}  // namespace implementation
+}  // namespace CPP_VERSION
 }  // namespace audio
 }  // namespace hardware
 }  // namespace android
 
-#endif  // ANDROID_HARDWARE_AUDIO_V5_0_STREAM_H
+#endif  // ANDROID_HARDWARE_AUDIO_STREAM_H

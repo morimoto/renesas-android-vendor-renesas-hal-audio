@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,48 +14,36 @@
  * limitations under the License.
  */
 
-#ifndef ANDROID_HARDWARE_AUDIO_V5_0_STREAMOUT_H
-#define ANDROID_HARDWARE_AUDIO_V5_0_STREAMOUT_H
+#ifndef ANDROID_HARDWARE_AUDIO_STREAMOUT_H
+#define ANDROID_HARDWARE_AUDIO_STREAMOUT_H
+
+#include PATH(android/hardware/audio/FILE_VERSION/IStreamOut.h)
 
 #include "Device.h"
 #include "Stream.h"
 
-#include <android/hardware/audio/5.0/IStreamOut.h>
-#include <hidl/MQDescriptor.h>
-#include <hidl/Status.h>
-#include <fmq/EventFlag.h>
-#include <fmq/MessageQueue.h>
-#include <utils/Thread.h>
-
 #include <atomic>
 #include <memory>
+
+#include <fmq/EventFlag.h>
+#include <fmq/MessageQueue.h>
+#include <hidl/MQDescriptor.h>
+#include <hidl/Status.h>
+#include <utils/Thread.h>
 
 namespace android {
 namespace hardware {
 namespace audio {
-namespace V5_0 {
-namespace renesas {
+namespace CPP_VERSION {
+namespace implementation {
 
-using ::android::hardware::audio::common::V5_0::AudioChannelMask;
-using ::android::hardware::audio::common::V5_0::AudioDevice;
-using ::android::hardware::audio::common::V5_0::AudioFormat;
-using ::android::hardware::audio::common::V5_0::DeviceAddress;
-using ::android::hardware::audio::V5_0::AudioDrain;
-using ::android::hardware::audio::V5_0::IStream;
-using ::android::hardware::audio::V5_0::IStreamOut;
-using ::android::hardware::audio::V5_0::IStreamOutCallback;
-using ::android::hardware::audio::V5_0::ParameterValue;
-using ::android::hardware::audio::V5_0::Result;
-using ::android::hardware::audio::V5_0::TimeSpec;
+using ::android::sp;
+using ::android::hardware::hidl_string;
+using ::android::hardware::hidl_vec;
 using ::android::hardware::Return;
 using ::android::hardware::Void;
-using ::android::hardware::hidl_vec;
-using ::android::hardware::hidl_string;
-using ::android::sp;
-
-// namespace {
-// class CommonStreamOutThread;
-// }
+using namespace ::android::hardware::audio::common::CPP_VERSION;
+using namespace ::android::hardware::audio::CPP_VERSION;
 
 struct StreamOut : public IStreamOut {
     typedef MessageQueue<WriteCommand, kSynchronizedReadWrite> CommandMQ;
@@ -64,12 +52,15 @@ struct StreamOut : public IStreamOut {
 
     StreamOut(const sp<Device>& device, audio_stream_out_t* stream);
 
-    // Methods from ::android::hardware::audio::AUDIO_HAL_VERSION::IStream follow.
+    // Methods from ::android::hardware::audio::CPP_VERSION::IStream follow.
     Return<uint64_t> getFrameSize() override;
     Return<uint64_t> getFrameCount() override;
     Return<uint64_t> getBufferSize() override;
     Return<uint32_t> getSampleRate() override;
-
+#if MAJOR_VERSION == 2
+    Return<void> getSupportedSampleRates(getSupportedSampleRates_cb _hidl_cb) override;
+    Return<void> getSupportedChannelMasks(getSupportedChannelMasks_cb _hidl_cb) override;
+#endif
     Return<void> getSupportedSampleRates(AudioFormat format, getSupportedSampleRates_cb _hidl_cb);
     Return<void> getSupportedChannelMasks(AudioFormat format, getSupportedChannelMasks_cb _hidl_cb);
     Return<Result> setSampleRate(uint32_t sampleRateHz) override;
@@ -82,7 +73,14 @@ struct StreamOut : public IStreamOut {
     Return<Result> addEffect(uint64_t effectId) override;
     Return<Result> removeEffect(uint64_t effectId) override;
     Return<Result> standby() override;
-
+#if MAJOR_VERSION == 2
+    Return<AudioDevice> getDevice() override;
+    Return<Result> setDevice(const DeviceAddress& address) override;
+    Return<void> getParameters(const hidl_vec<hidl_string>& keys,
+                               getParameters_cb _hidl_cb) override;
+    Return<Result> setParameters(const hidl_vec<ParameterValue>& parameters) override;
+    Return<Result> setConnectedState(const DeviceAddress& address, bool connected) override;
+#elif MAJOR_VERSION >= 4
     Return<void> getDevices(getDevices_cb _hidl_cb) override;
     Return<Result> setDevices(const hidl_vec<DeviceAddress>& devices) override;
     Return<void> getParameters(const hidl_vec<ParameterValue>& context,
@@ -90,13 +88,16 @@ struct StreamOut : public IStreamOut {
                                getParameters_cb _hidl_cb) override;
     Return<Result> setParameters(const hidl_vec<ParameterValue>& context,
                                  const hidl_vec<ParameterValue>& parameters) override;
-
+#endif
     Return<Result> setHwAvSync(uint32_t hwAvSync) override;
     Return<Result> close() override;
 
     Return<void> debug(const hidl_handle& fd, const hidl_vec<hidl_string>& options) override;
+#if MAJOR_VERSION == 2
+    Return<void> debugDump(const hidl_handle& fd) override;
+#endif
 
-    // Methods from ::android::hardware::audio::AUDIO_HAL_VERSION::IStreamOut follow.
+    // Methods from ::android::hardware::audio::CPP_VERSION::IStreamOut follow.
     Return<uint32_t> getLatency() override;
     Return<Result> setVolume(float left, float right) override;
     Return<void> prepareForWriting(uint32_t frameSize, uint32_t framesCount,
@@ -116,21 +117,35 @@ struct StreamOut : public IStreamOut {
     Return<Result> stop() override;
     Return<void> createMmapBuffer(int32_t minSizeFrames, createMmapBuffer_cb _hidl_cb) override;
     Return<void> getMmapPosition(getMmapPosition_cb _hidl_cb) override;
-
+#if MAJOR_VERSION >= 4
     Return<void> updateSourceMetadata(const SourceMetadata& sourceMetadata) override;
     Return<Result> selectPresentation(int32_t presentationId, int32_t programId) override;
-
+#endif
+#if MAJOR_VERSION >= 6
+    Return<void> getDualMonoMode(getDualMonoMode_cb _hidl_cb) override;
+    Return<Result> setDualMonoMode(DualMonoMode mode) override;
+    Return<void> getAudioDescriptionMixLevel(getAudioDescriptionMixLevel_cb _hidl_cb) override;
+    Return<Result> setAudioDescriptionMixLevel(float leveldB) override;
+    Return<void> getPlaybackRateParameters(getPlaybackRateParameters_cb _hidl_cb) override;
+    Return<Result> setPlaybackRateParameters(const PlaybackRate& playbackRate) override;
+#endif
 
     static Result getPresentationPositionImpl(audio_stream_out_t* stream, uint64_t* frames,
                                               TimeSpec* timeStamp);
 
-   private:
-    bool mIsClosed;
+#if MAJOR_VERSION >= 6
+    Return<Result> setEventCallback(const sp<IStreamOutEventCallback>& callback) override;
+#endif
+
+  private:
     const sp<Device> mDevice;
     audio_stream_out_t* mStream;
     const sp<Stream> mStreamCommon;
     const sp<StreamMmap<audio_stream_out_t>> mStreamMmap;
-    sp<IStreamOutCallback> mCallback;
+    sp<IStreamOutCallback> mCallback;  // Callback for non-blocking write and drain
+#if MAJOR_VERSION >= 6
+    sp<IStreamOutEventCallback> mEventCallback;
+#endif
     std::unique_ptr<CommandMQ> mCommandMQ;
     std::unique_ptr<DataMQ> mDataMQ;
     std::unique_ptr<StatusMQ> mStatusMQ;
@@ -141,12 +156,16 @@ struct StreamOut : public IStreamOut {
     virtual ~StreamOut();
 
     static int asyncCallback(stream_callback_event_t event, void* param, void* cookie);
+
+#if MAJOR_VERSION >= 6
+    static int asyncEventCallback(stream_event_callback_type_t event, void* param, void* cookie);
+#endif
 };
 
-}  // namespace renesas
-}  // namespace V5_0
+}  // namespace implementation
+}  // namespace CPP_VERSION
 }  // namespace audio
 }  // namespace hardware
 }  // namespace android
 
-#endif  // ANDROID_HARDWARE_AUDIO_V5_0_STREAMOUT_H
+#endif  // ANDROID_HARDWARE_AUDIO_STREAMOUT_H
