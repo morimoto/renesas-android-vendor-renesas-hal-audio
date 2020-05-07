@@ -1,9 +1,9 @@
 cc_binary {
-    name: "android.hardware.audio@5.0-service.renesas",
+    name: "android.hardware.audio@6.0-service.renesas",
     proprietary: true,
     relative_install_path: "hw",
-    init_rc: ["android.hardware.audio@5.0-service.renesas.rc"],
-    vintf_fragments: ["android.hardware.audio@5.0-service.renesas.xml"],
+    init_rc: ["android.hardware.audio@6.0-service.renesas.rc"],
+    vintf_fragments: ["android.hardware.audio@6.0-service.renesas.xml"],
 
     defaults: ["audio_hal_version_defaults"],
 
@@ -33,9 +33,9 @@ cc_binary {
         "liblog",
         "libmedia_helper",
         "libutils",
-        "android.hardware.audio@5.0",
-        "android.hardware.audio.common@5.0",
-        "android.hardware.audio.common@5.0-util",
+        "android.hardware.audio@6.0",
+        "android.hardware.audio.common@6.0",
+        "android.hardware.audio.common@6.0-util",
         "android.hardware.audio.common-util",
     ],
 

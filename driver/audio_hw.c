@@ -738,6 +738,14 @@ static void out_update_source_metadata(struct audio_stream_out *stream,
 {
 }
 
+#if MAJOR_VERSION >= 6
+static int out_set_event_callback(struct audio_stream_out *stream,
+        stream_event_callback_t callback, void *cookie)
+{
+    return 0;
+}
+#endif // MAJOR_VERSION >= 6
+
 static uint32_t in_get_sample_rate(const struct audio_stream *stream) {
     struct generic_stream_in *in = (struct generic_stream_in *)stream;
     return in->req_config.sample_rate;
@@ -790,7 +798,11 @@ static int refine_output_parameters(uint32_t *sample_rate, audio_format_t *forma
 
 static int refine_input_parameters(uint32_t *sample_rate, audio_format_t *format,
         audio_channel_mask_t *channel_mask) {
-    static const uint32_t sample_rates [] = {8000, 11025, 16000, 22050, 44100, 48000};
+    /*
+     * TODO: fetch sample rates from audio_policy_configuration.xml
+     */
+    static const uint32_t sample_rates [] = {
+            8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000 };
     static const int sample_rates_count = sizeof(sample_rates)/sizeof(uint32_t);
     bool inval = false;
     // Only PCM_16_bit is supported. If this is changed, stereo to mono drop
@@ -1499,6 +1511,9 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
     out->stream.get_next_write_timestamp = out_get_next_write_timestamp;
     out->stream.set_callback =  out_set_callback;
     out->stream.update_source_metadata = out_update_source_metadata;
+#if MAJOR_VERSION >= 6
+    out->stream.set_event_callback = out_set_event_callback;
+#endif // MAJOR_VERSION >= 6
 
     pthread_mutex_init(&out->lock, (const pthread_mutexattr_t *) NULL);
     out->dev = adev;
@@ -2053,6 +2068,9 @@ static int adev_set_audio_port_config(struct audio_hw_device *dev,
     return ret;
 }
 
+#if MAJOR_VERSION >= 6
+//    #error "make change for update patch"
+#endif
 static int adev_create_audio_patch(struct audio_hw_device *dev,
         unsigned int num_sources,
         const struct audio_port_config *sources,
@@ -2156,6 +2174,20 @@ static int adev_get_microphones(const audio_hw_device_t * dev,
     return 0;
 }
 
+#if MAJOR_VERSION >= 6
+int adev_add_device_effect(struct audio_hw_device *dev,
+        audio_port_handle_t device, effect_handle_t effect)
+{
+    return 0;
+}
+
+int adev_remove_device_effect(struct audio_hw_device *dev,
+        audio_port_handle_t device, effect_handle_t effect)
+{
+    return 0;
+}
+#endif // MAJOR_VERSION >= 6
+
 static int adev_close(hw_device_t *dev) {
     struct generic_audio_device *adev = (struct generic_audio_device *)dev;
     int ret = 0;
@@ -2253,6 +2285,10 @@ static int adev_open(const hw_module_t *module,
     adev->device.set_audio_port_config = adev_set_audio_port_config;
     adev->device.create_audio_patch = adev_create_audio_patch;
     adev->device.release_audio_patch = adev_release_audio_patch;
+#if MAJOR_VERSION >= 6
+    adev->device.add_device_effect = adev_add_device_effect;
+    adev->device.remove_device_effect = adev_remove_device_effect;
+#endif // MAJOR_VERSION >= 6
 
     *device = &adev->device.common;
 

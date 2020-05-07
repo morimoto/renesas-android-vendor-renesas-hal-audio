@@ -18,7 +18,8 @@ USE_XML_AUDIO_POLICY_CONF := 1
 PRODUCT_PACKAGES += \
     audio.primary.${TARGET_PRODUCT} \
     audio.r_submix.${TARGET_PRODUCT} \
-    android.hardware.audio@5.0-service.renesas \
+    android.hardware.audio@6.0-service.renesas \
+    android.hardware.audio.effect@6.0-service.renesas \
     android.hardware.automotive.audiocontrol@1.0-service.renesas
 
 PRODUCT_COPY_FILES += \

@@ -1,5 +1,5 @@
-service audio-hal-5-0 /vendor/bin/hw/android.hardware.audio@5.0-service.renesas
-    interface android.hardware.audio@5.0::IDevicesFactory default
+service audio-hal-6-0 /vendor/bin/hw/android.hardware.audio@6.0-service.renesas
+    interface android.hardware.audio@6.0::IDevicesFactory default
     class hal
     user audioserver
     # media gid needed for /dev/fm (radio) and for /data/misc/media (tee)
