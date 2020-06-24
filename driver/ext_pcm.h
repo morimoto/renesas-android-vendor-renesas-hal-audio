@@ -30,16 +30,19 @@ struct ext_mixer_pipeline {
   unsigned int position;
 };
 
+struct ext_mixer_thread {
+  pthread_mutex_t lock;
+  struct ext_mixer_pipeline pipeline;
+  pthread_t thread;
+  Hashmap *pipeline_map;
+  bool exit_flag;
+  pthread_cond_t wake;
+};
+
 struct ext_pcm {
   struct pcm *pcm;
-  pthread_mutex_t lock;
   unsigned int ref_count;
-  pthread_mutex_t mixer_lock;
-  struct ext_mixer_pipeline mixer_pipeline;
-  pthread_t mixer_thread;
-  Hashmap *mixer_pipeline_map;
-  bool mixer_exit_flag;
-  pthread_cond_t mixer_wake;
+  struct ext_mixer_thread mixer;
 };
 
 struct ext_pcm *ext_pcm_open_default(unsigned int card, unsigned int device,
