@@ -30,6 +30,7 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <utils/threads.h>
 
 #include <log/log.h>
 #include <cutils/str_parms.h>
@@ -354,6 +355,8 @@ static void *out_write_worker(void *args) {
     int buffer_frames;
     int buffer_size;
     bool close_pcm = false;
+
+    androidSetThreadPriority(gettid(), ANDROID_PRIORITY_URGENT_AUDIO);
 
     while (true) {
         pthread_mutex_lock(&out->lock);

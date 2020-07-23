@@ -54,6 +54,7 @@ cc_defaults {
     include_dirs: ["external/tinyalsa/include"],
     shared_libs: [
         "libcutils",
+        "libutils",
         "liblog",
         "libdl",
         "libtinyalsa",
