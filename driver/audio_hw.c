@@ -416,6 +416,7 @@ static void *out_write_worker(void *args) {
 #endif
                 ext_pcm = ext_pcm_open_default(card, device, flags, &out->pcm_config);
 
+
             if (!ext_pcm_is_ready(ext_pcm)) {
                 ALOGE("pcm_open(out) failed: %s: address %s channels %d format %d rate %d period size %d",
                         ext_pcm_get_error(ext_pcm),
@@ -427,9 +428,6 @@ static void *out_write_worker(void *args) {
                 pthread_mutex_unlock(&out->lock);
                 break;
             }
-
-            clock_gettime(CLOCK_MONOTONIC, &out->underrun_time);
-
             buffer_frames = out->pcm_config.period_size;
             buffer_size = ext_pcm_frames_to_bytes(ext_pcm, buffer_frames);
             buffer = malloc(buffer_size);
@@ -539,7 +537,7 @@ static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, si
                              current_time.tv_nsec) / 1000;
     if (out->standby) {
         out->standby = false;
-//        out->underrun_time = current_time;
+        out->underrun_time = current_time;
         out->frames_rendered = 0;
         out->frames_total_buffered = 0;
     }
