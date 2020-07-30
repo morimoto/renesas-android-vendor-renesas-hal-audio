@@ -627,10 +627,25 @@ static int out_get_render_position(const struct audio_stream_out *stream, uint32
 
 // Must be called with out->lock held
 static void do_out_standby(struct generic_stream_out *out) {
+    int frames_sleep = 0;
+    uint64_t sleep_time_us = 0;
     if (out->standby) {
         return;
     }
-    get_current_output_position(out, &out->underrun_position, NULL);
+    while (true) {
+        get_current_output_position(out, &out->underrun_position, NULL);
+        frames_sleep = out->frames_written - out->underrun_position;
+        if (frames_sleep == 0) {
+            break;
+        }
+
+        sleep_time_us = frames_sleep * 1000000LL /
+                        out_get_sample_rate(&out->stream.common);
+
+        pthread_mutex_unlock(&out->lock);
+        usleep(sleep_time_us);
+        pthread_mutex_lock(&out->lock);
+    }
     out->worker_standby = true;
     out->standby = true;
     pthread_cond_signal(&out->worker_wake);
