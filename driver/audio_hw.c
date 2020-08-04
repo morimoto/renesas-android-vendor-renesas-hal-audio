@@ -404,7 +404,7 @@ static void *out_write_worker(void *args) {
 
         if (!ext_pcm) {
             unsigned int card = PCM_CARD_DEFAULT;
-            unsigned int device = PCM_DEVICE_DEFAULT;
+            unsigned int device = PCM_DEVICE_OUT;
             unsigned int flags = PCM_OUT | PCM_MONOTONIC;
 #ifdef GEN3_HFP_SUPPORT
             if (out->device == AUDIO_DEVICE_OUT_BLUETOOTH_SCO) {
@@ -1041,7 +1041,7 @@ static void *in_read_worker(void *args) {
 #endif
             {
                 card = PCM_CARD_DEFAULT;
-                device = PCM_DEVICE_DEFAULT;
+                device = PCM_DEVICE_IN;
             }
             pcm = pcm_open(card, device, PCM_IN, &in->pcm_config);
             if (!pcm_is_ready(pcm)) {
@@ -1173,7 +1173,7 @@ static void *in_read_worker_bt_call(void *args) {
             ALOGD("%s: opening input pcm", __func__);
 
             unsigned int card = PCM_CARD_DEFAULT;
-            unsigned int device = PCM_DEVICE_DEFAULT;
+            unsigned int device = PCM_DEVICE_IN;
 
             if (in->device == AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET) {
                 card = PCM_CARD_HFP;

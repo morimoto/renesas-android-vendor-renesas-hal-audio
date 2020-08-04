@@ -33,9 +33,11 @@
 
 /* ALSA cards for GEN3 */
 #define PCM_CARD_GEN3             0
-#define PCM_DEVICE_GEN3           0
+#define PCM_DEVICE_GEN3_OUT       0
+#define PCM_DEVICE_GEN3_IN        1
 #define PCM_CARD_DEFAULT          PCM_CARD_GEN3
-#define PCM_DEVICE_DEFAULT        PCM_DEVICE_GEN3
+#define PCM_DEVICE_OUT            PCM_DEVICE_GEN3_OUT
+#define PCM_DEVICE_IN             PCM_DEVICE_GEN3_IN
 
 #define PCM_CARD_GEN3_FM          2
 #define PCM_DEVICE_GEN3_FM        0
