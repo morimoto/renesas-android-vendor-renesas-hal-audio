@@ -25,6 +25,10 @@
 // Holds up to 4KB buffer for each mixer pipeline, this value is arbitrary chosen
 #define MIXER_BUFFER_SIZE (1024 * 4)
 
+// mixer sleep time
+// about 1 frame periods in 48000 hz
+#define MIXER_SLEEP_US 20000
+
 struct ext_mixer_pipeline {
   int16_t buffer[MIXER_BUFFER_SIZE];
   unsigned int position;
@@ -36,7 +40,6 @@ struct ext_mixer_thread {
   pthread_t thread;
   Hashmap *pipeline_map;
   bool exit_flag;
-  pthread_cond_t wake;
 };
 
 struct ext_pcm {
