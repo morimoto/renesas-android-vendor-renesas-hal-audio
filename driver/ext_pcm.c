@@ -23,6 +23,7 @@
 
 #include <log/log.h>
 #include <cutils/str_parms.h>
+#include <utils/threads.h>
 
 #include "ext_pcm.h"
 
@@ -69,6 +70,8 @@ static bool mixer_thread_mix(__unused void *key, void *value, void *context) {
 static void *mixer_thread_loop(void *context) {
   ALOGD("%s: __enter__", __func__);
   struct ext_pcm *ext_pcm = (struct ext_pcm *)context;
+
+  androidSetThreadPriority(gettid(), ANDROID_PRIORITY_URGENT_AUDIO);
 
   do {
     pthread_mutex_lock(&ext_pcm->mixer.lock);
