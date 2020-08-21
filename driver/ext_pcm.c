@@ -52,16 +52,6 @@ static int str_hash_fn(void *str) {
   return (int)hash;
 }
 
-static bool check_mixer_buffers(__unused void *key, void *value, void *context) {
-  struct ext_mixer_pipeline *pipeline = (struct ext_mixer_pipeline *)value;
-  int *counter = (int *)context;
-
-  if (pipeline->position > 0) {
-    ++(*counter);
-  }
-  return true;
-}
-
 static bool mixer_thread_mix(__unused void *key, void *value, void *context) {
   struct ext_mixer_pipeline *pipeline_out = (struct ext_mixer_pipeline *)context;
   struct ext_mixer_pipeline *pipeline_in = (struct ext_mixer_pipeline *)value;
@@ -80,8 +70,8 @@ static void *mixer_thread_loop(void *context) {
   ALOGD("%s: __enter__", __func__);
   struct ext_pcm *ext_pcm = (struct ext_pcm *)context;
 
-  pthread_mutex_lock(&ext_pcm->mixer.lock);
   do {
+    pthread_mutex_lock(&ext_pcm->mixer.lock);
     ext_pcm->mixer.pipeline.position = 0;
     // Combine the output from every pipeline into one output buffer
     hashmapForEach(ext_pcm->mixer.pipeline_map, mixer_thread_mix,
@@ -92,10 +82,12 @@ static void *mixer_thread_loop(void *context) {
           ext_pcm->mixer.pipeline.position * sizeof(int16_t));
     }
     memset(&ext_pcm->mixer.pipeline, 0, sizeof(struct ext_mixer_pipeline));
-    // will unlock and lock automatically
-    pthread_cond_wait(&ext_pcm->mixer.wake, &ext_pcm->mixer.lock);
+
+    // sleep until next cycle
+    pthread_mutex_unlock(&ext_pcm->mixer.lock);
+    usleep(MIXER_SLEEP_US);
   } while (!ext_pcm->mixer.exit_flag);
-  pthread_mutex_unlock(&ext_pcm->mixer.lock);
+
   return NULL;
 }
 static int mixer_pipeline_write(struct ext_pcm *ext_pcm, const char *bus_address,
@@ -116,14 +108,6 @@ static int mixer_pipeline_write(struct ext_pcm *ext_pcm, const char *bus_address
   }
   pthread_mutex_unlock(&ext_pcm->mixer.lock);
 
-  int filled_buffers = 0;
-  hashmapForEach(ext_pcm->mixer.pipeline_map, check_mixer_buffers,
-        &filled_buffers);
-
-  if (filled_buffers == ext_pcm->ref_count) {
-    pthread_cond_signal(&ext_pcm->mixer.wake);
-  }
-
   return 0;
 }
 
@@ -135,7 +119,6 @@ struct ext_pcm *ext_pcm_open_default(unsigned int card, unsigned int device,
     shared_ext_pcm->pcm = pcm_open(card, device, flags, config);
 
     pthread_mutex_init(&shared_ext_pcm->mixer.lock, (const pthread_mutexattr_t *)NULL);
-    pthread_cond_init(&shared_ext_pcm->mixer.wake, NULL);
     pthread_create(&shared_ext_pcm->mixer.thread, (const pthread_attr_t *)NULL,
             mixer_thread_loop, shared_ext_pcm);
     shared_ext_pcm->mixer.pipeline_map = hashmapCreate(8, str_hash_fn, str_eq);
@@ -160,7 +143,6 @@ struct ext_pcm *ext_pcm_open_hfp(unsigned int card, unsigned int device,
   ext_pcm = calloc(1, sizeof(struct ext_pcm));
   ext_pcm->pcm = pcm_open(card, device, flags, config);
   pthread_mutex_init(&ext_pcm->mixer.lock, (const pthread_mutexattr_t *)NULL);
-  pthread_cond_init(&ext_pcm->mixer.wake, NULL);
   pthread_create(&ext_pcm->mixer.thread, (const pthread_attr_t *)NULL,
           mixer_thread_loop, ext_pcm);
   ext_pcm->mixer.pipeline_map = hashmapCreate(1, str_hash_fn, str_eq);
@@ -196,19 +178,15 @@ int ext_pcm_close(struct ext_pcm *ext_pcm, const char *bus_address) {
     pthread_mutex_lock(&ext_pcm->mixer.lock);
     ext_pcm->mixer.exit_flag = true;
     pthread_mutex_unlock(&ext_pcm->mixer.lock);
-    pthread_cond_signal(&ext_pcm->mixer.wake);
     pthread_join(ext_pcm->mixer.thread, NULL);
     hashmapForEach(ext_pcm->mixer.pipeline_map, mixer_free_pipeline,
         (void *)NULL);
     hashmapFree(ext_pcm->mixer.pipeline_map);
     pcm_close(ext_pcm->pcm);
-    pthread_cond_destroy(&ext_pcm->mixer.wake);
     pthread_mutex_destroy(&ext_pcm->mixer.lock);
     if (ext_pcm == shared_ext_pcm)
       shared_ext_pcm = NULL;
     free(ext_pcm);
-  } else {
-    pthread_cond_signal(&ext_pcm->mixer.wake);
   }
 
   pthread_mutex_unlock(&ext_pcm_init_lock);
