@@ -1,5 +1,8 @@
 /*
+ * Stereo channels mixer
+ *
  * Copyright (C) 2018 The Android Open Source Project
+ * Copyright (C) 2020 GlobalLogic
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,32 +24,48 @@
 
 #include <cutils/hashmap.h>
 #include <tinyalsa/asoundlib.h>
+#include <stdatomic.h>
 
-#include "hal_dependencies.h"
+#include "audio_vbuffer.h"
 
-#define MIXER_BUFFER_SIZE (OUT_PERIOD_SIZE * OUT_PERIOD_COUNT * OUT_CHANNELS_DEFAULT)
-
-// mixer sleep time
-// about 1 frame periods in 48000 hz
-#define MIXER_SLEEP_US 20000
-
-struct ext_mixer_pipeline {
-  int16_t buffer[MIXER_BUFFER_SIZE];
-  unsigned int position;
-};
+typedef struct ext_mixer_bus {
+  audio_vbuffer_t vbuf;
+  atomic_flag *thread_notify;
+} ext_mixer_bus_t;
 
 struct ext_mixer_thread {
-  pthread_mutex_t lock;
-  struct ext_mixer_pipeline pipeline;
   pthread_t thread;
-  Hashmap *pipeline_map;
-  bool exit_flag;
+  Hashmap *bus_map;
+  pthread_mutex_t bus_map_lock;
+  void *mixed_buffer; // ext_mixer_bus format
+  void *read_buffer; // ext_mixer_bus format
+  void *write_buffer; // PCM format (if different)
+  size_t mixed_frames;
+  struct pcm *pcm;
+  struct pcm_settings {
+    unsigned int card;
+    unsigned int device;
+    unsigned int flags;
+    struct pcm_config config;
+  } pcm_conf;
+
+  unsigned int (*pcm_write)(struct ext_mixer_thread*, size_t /*bytes*/);
+
+  struct bus_settings {
+    size_t frame_count;
+    size_t channels;
+    size_t format_bytes;
+    size_t frame_size;
+  } bus_conf;
+  atomic_bool do_exit;
+  atomic_flag thread_notify;
+  atomic_bool pcm_init_done;
+  atomic_int error;
 };
 
 struct ext_pcm {
-  struct pcm *pcm;
-  unsigned int ref_count;
   struct ext_mixer_thread mixer;
+  atomic_uint ref_count;
 };
 
 struct ext_pcm *ext_pcm_open_default(unsigned int card, unsigned int device,
@@ -55,12 +74,15 @@ struct ext_pcm *ext_pcm_open_hfp(unsigned int card, unsigned int device,
                              unsigned int flags, struct pcm_config *config);
 int ext_pcm_close(struct ext_pcm *ext_pcm, const char *bus_address);
 int ext_pcm_is_ready(struct ext_pcm *ext_pcm);
-int ext_pcm_write(struct ext_pcm *ext_pcm, const char *bus_address,
-                  const void *data, unsigned int count);
+
+ext_mixer_bus_t *ext_pcm_get_write_bus(struct ext_pcm *ext_pcm, const char *bus_address);
+size_t ext_pcm_write_bus(ext_mixer_bus_t *ext_pcm_bus,
+                         const void *data, size_t count);
+
 const char *ext_pcm_get_error(struct ext_pcm *ext_pcm);
-unsigned int ext_pcm_frames_to_bytes(struct ext_pcm *ext_pcm,
-                                     unsigned int frames);
-unsigned int ext_pcm_bytes_to_frames(struct ext_pcm *ext_pcm,
-                                     unsigned int bytes);
+size_t ext_pcm_frames_to_bytes(struct ext_pcm *ext_pcm,
+                                     size_t frames);
+size_t ext_pcm_bytes_to_frames(struct ext_pcm *ext_pcm,
+                                     size_t bytes);
 
 #endif  // EXT_PCM_H

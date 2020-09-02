@@ -351,6 +351,7 @@ static int out_set_volume(struct audio_stream_out *stream,
 static void *out_write_worker(void *args) {
     struct generic_stream_out *out = (struct generic_stream_out *)args;
     struct ext_pcm *ext_pcm = NULL;
+    ext_mixer_bus_t *write_bus = NULL;
     uint8_t *buffer = NULL;
     int buffer_frames;
     int buffer_size;
@@ -376,6 +377,7 @@ static void *out_write_worker(void *args) {
             if (ext_pcm) {
                 ext_pcm_close(ext_pcm, out->bus_address); // Frees pcm
                 ext_pcm = NULL;
+                write_bus = NULL;
                 free(buffer);
                 buffer = NULL;
             }
@@ -428,6 +430,7 @@ static void *out_write_worker(void *args) {
                 pthread_mutex_unlock(&out->lock);
                 break;
             }
+            write_bus = ext_pcm_get_write_bus(ext_pcm, out->bus_address);
             buffer_frames = out->pcm_config.period_size;
             buffer_size = ext_pcm_frames_to_bytes(ext_pcm, buffer_frames);
             buffer = malloc(buffer_size);
@@ -454,11 +457,14 @@ static void *out_write_worker(void *args) {
         }
 
         pthread_mutex_unlock(&out->lock);
-        int write_error = ext_pcm_write(ext_pcm, out->bus_address,
-                                        output_buffer, ext_pcm_frames_to_bytes(ext_pcm, frames));
-        if (write_error) {
-            ALOGE("pcm_write failed %s address %s", ext_pcm_get_error(ext_pcm), out->bus_address);
-            close_pcm = true;
+        size_t written_frames = ext_pcm_write_bus(write_bus, output_buffer, frames);
+        if (!written_frames) {
+            if(!ext_pcm_is_ready(ext_pcm)) {
+                ALOGE("pcm_write failed %s address %s", ext_pcm_get_error(ext_pcm), out->bus_address);
+                close_pcm = true;
+            } else {
+                ALOGW("pcm_write overrun (%zu/%zu frames written)", written_frames, frames);
+            }
         } else {
             ALOGV("pcm_write succeed address %s", out->bus_address);
         }
