@@ -60,7 +60,7 @@ struct generic_stream_out {
   audio_devices_t device;            // Protected by this->lock
   struct audio_config req_config;    // Constant after init
   struct pcm_config pcm_config;      // Constant after init
-  audio_vbuffer_t buffer;            // Protected by this->lock
+  audio_vbuffer_t ringbuffer;        // Protected by this->lock
   char *bus_address;                 // Extended field. Constant after init
   struct audio_gain gain_stage;      // Constant after init
   float amplitude_ratio;             // Protected by this->lock
@@ -94,7 +94,7 @@ struct generic_stream_in {
   struct audio_config req_config;    // Constant after init
   struct pcm *pcm;                   // Protected by this->lock
   struct pcm_config pcm_config;      // Constant after init
-  audio_vbuffer_t buffer;            // Protected by this->lock
+  audio_vbuffer_t ringbuffer;        // Protected by this->lock
   char *bus_address;                 // Extended field. Constant after init
 
   // Time & Position Keeping
@@ -113,6 +113,9 @@ struct generic_stream_in {
   struct resampler_itfe *resampler; // Protected by this->lock
   void *resampler_buffer; // Protected by this->lock
   // size_t resampler_buffer_frame_count;
+
+  // Channels adjust (SK/KF)
+  void *adjustment_buffer;     // size of audio_vbuffer frame count
 };
 
 #endif  // AUDIO_HW_H
