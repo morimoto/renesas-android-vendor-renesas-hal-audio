@@ -44,7 +44,7 @@
 #define DEFAULT_OUT_SAMPLING_RATE   48000
 #define DEFAULT_IN_SAMPLING_RATE    48000
 
-struct route_setting defaults[] = {
+static struct route_setting defaults[] = {
     /* general */
     {
         .ctl_name = MIXER_PLAY_VOL,
@@ -65,7 +65,7 @@ struct route_setting defaults[] = {
     },
 };
 
-struct device_card cards[] = {
+static struct device_card cards[] = {
     {
         .card = PCM_CARD_GEN3,
         .defaults = defaults,
