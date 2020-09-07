@@ -61,7 +61,7 @@
 #define DEFAULT_HFP_SAMPLING_RATE   16000
 
 /* These are values that never change */
-struct route_setting defaults[] = {
+static struct route_setting defaults[] = {
     /* playback */
     {
         .ctl_name = MIXER_PLAY_VOL_CTRL_TYPE,
@@ -114,7 +114,7 @@ struct route_setting defaults[] = {
     { .ctl_name = NULL, },
 };
 
-struct route_setting defaultsfm[] = {
+static struct route_setting defaultsfm[] = {
     {
         .ctl_name = MIXER_DVC_IN_CAPTURE_VOL,
         .intval = MIXER_DVC_IN_CAP_VOL_DEF,
@@ -124,7 +124,7 @@ struct route_setting defaultsfm[] = {
     { .ctl_name = NULL, },
 };
 
-struct device_card cards[] = {
+static struct device_card cards[] = {
     {
         .card = PCM_CARD_GEN3,
         .defaults = defaults,

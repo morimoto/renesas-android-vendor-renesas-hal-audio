@@ -22,8 +22,9 @@
 #include <cutils/hashmap.h>
 #include <tinyalsa/asoundlib.h>
 
-// Holds up to 4KB buffer for each mixer pipeline, this value is arbitrary chosen
-#define MIXER_BUFFER_SIZE (1024 * 4)
+#include "hal_dependencies.h"
+
+#define MIXER_BUFFER_SIZE (OUT_PERIOD_SIZE * OUT_PERIOD_COUNT * OUT_CHANNELS_DEFAULT)
 
 // mixer sleep time
 // about 1 frame periods in 48000 hz
