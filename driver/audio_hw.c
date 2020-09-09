@@ -510,10 +510,7 @@ static void out_apply_gain(struct generic_stream_out *out, const void *buffer, s
     int16_t *int16_buffer = (int16_t *)buffer;
     size_t int16_size = bytes / sizeof(int16_t);
     for (int i = 0; i < int16_size; i++) {
-        float multiplied = int16_buffer[i] * out->amplitude_ratio;
-        if (multiplied > INT16_MAX) int16_buffer[i] = INT16_MAX;
-        else if (multiplied < INT16_MIN) int16_buffer[i] = INT16_MIN;
-        else int16_buffer[i] = (int16_t)multiplied;
+        int16_buffer[i] *= out->amplitude_ratio;
     }
 }
 
@@ -1553,7 +1550,7 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
         /* TODO: read struct audio_gain from audio_policy_configuration */
         out->gain_stage = (struct audio_gain) {
             .min_value = -3200,
-            .max_value = 600,
+            .max_value = 0,
             .step_value = 100,
         };
         out->amplitude_ratio = 1.0;
@@ -2027,23 +2024,17 @@ static int adev_set_audio_port_config(struct audio_hw_device *dev,
     struct generic_stream_out *out = hashmapGet(adev->out_bus_stream_map, (void *)bus_address);
     if (out) {
         pthread_mutex_lock(&out->lock);
-        int gainIndex = (config->gain.values[0] - out->gain_stage.min_value) /
-            out->gain_stage.step_value;
-        int totalSteps = (out->gain_stage.max_value - out->gain_stage.min_value) /
-            out->gain_stage.step_value;
-        float minDb = (float)out->gain_stage.min_value / 100.;
-        float maxDb = (float)out->gain_stage.max_value / 100.;
-        // curve: 10^((minDb + (maxDb - minDb) * gainIndex / totalSteps) / 20)
-        // we should subtract gain at zero gain index to fully silence playback
-        // at zero volume control position, i.e. do:
-        // out->amplitude_ratio = ...
-        //         - pow(10, (minDb + (maxDb - minDb) * (0 / (float)totalSteps)) / 20);
-        out->amplitude_ratio =
-                pow(10, (minDb + (maxDb - minDb) * (gainIndex / (float)totalSteps)) / 20) -
-                pow(10, (minDb) / 20);
+
+        // software volume ratio
+        // gain curve: 10^(dBFS / 20), config values are in milibels
+        if(config->gain.values[0] > out->gain_stage.min_value) {
+            out->amplitude_ratio = pow(10, config->gain.values[0] * 0.0005);
+        } else {
+            out->amplitude_ratio = 0.0;
+        }
+
+        ALOGD("%s: set audio gain: %f on %s", __func__, out->amplitude_ratio, bus_address);
         pthread_mutex_unlock(&out->lock);
-        ALOGD("%s: set audio gain: %f on %s",
-                __func__, out->amplitude_ratio, bus_address);
     } else {
         ALOGE("%s: can not find output stream by bus_address:%s", __func__, bus_address);
         ret = -EINVAL;
