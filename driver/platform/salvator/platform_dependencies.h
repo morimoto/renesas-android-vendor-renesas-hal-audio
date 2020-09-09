@@ -18,7 +18,7 @@
 #define MIXER_ADSP_PLAY_VOL         "PlaybackVolume" /* Volume gain in ADSP */
 #endif
 
-#define MIXER_PLAY_V_DEFAULT        260000      /* Max volume w/o distortion */
+#define MIXER_PLAY_V_DEFAULT        80000      /* Max volume w/o distortion */
 #define MIXER_PLAY_V_MAX            0x7fffff
 
 #define MIXER_CAPTURE_V_DEFAULT     0x2DC6C0
