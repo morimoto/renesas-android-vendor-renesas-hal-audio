@@ -33,8 +33,15 @@
 
 /* ALSA cards for GEN3 */
 #define PCM_CARD_GEN3             0
+
+#ifdef ENABLE_ADSP
+#define PCM_DEVICE_GEN3_OUT       1
+#define PCM_DEVICE_GEN3_IN        0
+#else
 #define PCM_DEVICE_GEN3_OUT       0
 #define PCM_DEVICE_GEN3_IN        1
+#endif
+
 #define PCM_CARD_DEFAULT          PCM_CARD_GEN3
 #define PCM_DEVICE_OUT            PCM_DEVICE_GEN3_OUT
 #define PCM_DEVICE_IN             PCM_DEVICE_GEN3_IN
