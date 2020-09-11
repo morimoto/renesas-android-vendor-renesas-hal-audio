@@ -25,7 +25,7 @@
 #define MIXER_CAPTURE_V_MAX         0x7fffff
 
 #ifdef ENABLE_ADSP
-#define MIXER_ADSP_PLAY_VOL_DEFAULT 25 /* This value was get experimentally */
+#define MIXER_ADSP_PLAY_VOL_DEFAULT 8          /* Max volume w/o distortion */
 #endif
 
 #define MIXER_MAXIMUM_LPCM_CHANNELS "Maximum LPCM channels"
