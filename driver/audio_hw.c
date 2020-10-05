@@ -348,131 +348,6 @@ static int out_set_volume(struct audio_stream_out *stream,
     return -ENOSYS;
 }
 
-static void *out_write_worker(void *args) {
-    struct generic_stream_out *out = (struct generic_stream_out *)args;
-    struct ext_pcm *ext_pcm = NULL;
-    ext_mixer_bus_t *write_bus = NULL;
-    uint8_t *buffer = NULL;
-    int buffer_frames;
-    int buffer_size;
-    bool close_pcm = false;
-
-    androidSetThreadPriority(gettid(), ANDROID_PRIORITY_URGENT_AUDIO);
-
-    while (true) {
-        pthread_mutex_lock(&out->lock);
-
-        if (out->worker_standby || out->worker_exit) {
-            close_pcm = true;
-        }
-
-        while (!close_pcm && audio_vbuffer_live(&out->ringbuffer) == 0) {
-            pthread_cond_wait(&out->worker_wake, &out->lock);
-            if (out->worker_standby || out->worker_exit) {
-                close_pcm = true;
-            }
-        }
-
-        if (close_pcm) {
-            if (ext_pcm) {
-                ext_pcm_close(ext_pcm, out->bus_address); // Frees pcm
-                ext_pcm = NULL;
-                write_bus = NULL;
-                free(buffer);
-                buffer = NULL;
-            }
-
-            if (out->worker_exit) {
-                pthread_mutex_unlock(&out->lock);
-                break;
-            }
-
-            close_pcm = false;
-#ifdef GEN3_HFP_SUPPORT
-            pthread_mutex_lock(&out->dev->lock);
-            if (out->device == AUDIO_DEVICE_OUT_BLUETOOTH_SCO) {
-                out->dev->hfp_call.stream_flag |= HFP_OUT_ACTIVE_FLAG;
-            }
-            pthread_mutex_unlock(&out->dev->lock);
-#endif
-
-            pthread_cond_wait(&out->worker_wake, &out->lock);
-        }
-
-        if (out->worker_exit) {
-            pthread_mutex_unlock(&out->lock);
-            break;
-        }
-
-        if (!ext_pcm) {
-            unsigned int card = PCM_CARD_DEFAULT;
-            unsigned int device = PCM_DEVICE_OUT;
-            unsigned int flags = PCM_OUT | PCM_MONOTONIC;
-#ifdef GEN3_HFP_SUPPORT
-            if (out->device == AUDIO_DEVICE_OUT_BLUETOOTH_SCO) {
-                card = PCM_CARD_HFP;
-                device = PCM_DEVICE_HFP;
-                flags = PCM_OUT;
-                ext_pcm = ext_pcm_open_hfp(card, device, flags, &out->pcm_config);
-            } else
-#endif
-                ext_pcm = ext_pcm_open_default(card, device, flags, &out->pcm_config);
-
-
-            if (!ext_pcm_is_ready(ext_pcm)) {
-                ALOGE("pcm_open(out) failed: %s: address %s channels %d format %d rate %d period size %d",
-                        ext_pcm_get_error(ext_pcm),
-                        out->bus_address,
-                        out->pcm_config.channels,
-                        out->pcm_config.format,
-                        out->pcm_config.rate,
-                        out->pcm_config.period_size);
-                pthread_mutex_unlock(&out->lock);
-                break;
-            }
-            write_bus = ext_pcm_get_write_bus(ext_pcm, out->bus_address);
-            buffer_frames = out->pcm_config.period_size;
-            buffer_size = ext_pcm_frames_to_bytes(ext_pcm, buffer_frames);
-            buffer = malloc(buffer_size);
-            if (!buffer) {
-                ALOGE("could not allocate write buffer");
-                pthread_mutex_unlock(&out->lock);
-                break;
-            }
-        }
-
-        void *output_buffer;
-        size_t frames = audio_vbuffer_read(&out->ringbuffer, buffer, buffer_frames);
-        ALOGV("%s: read %zu frames from vbuffer", __func__, frames);
-
-        if (out->resampler) {
-            size_t in_frames_count = frames;
-            size_t out_frames_count = (frames * out->pcm_config.rate) / out->req_config.sample_rate;
-            out->resampler->resample_from_input(out->resampler, (int16_t*)buffer, &in_frames_count,
-                                               (int16_t*)out->resampler_buffer, &out_frames_count);
-            output_buffer = out->resampler_buffer;
-            frames = out_frames_count;
-        } else {
-            output_buffer = buffer;
-        }
-
-        pthread_mutex_unlock(&out->lock);
-        size_t written_frames = ext_pcm_write_bus(write_bus, output_buffer, frames);
-        if (!written_frames) {
-            if(!ext_pcm_is_ready(ext_pcm)) {
-                ALOGE("pcm_write failed %s address %s", ext_pcm_get_error(ext_pcm), out->bus_address);
-                close_pcm = true;
-            } else {
-                ALOGW("pcm_write overrun (%zu/%zu frames written)", written_frames, frames);
-            }
-        } else {
-            ALOGV("pcm_write succeed address %s", out->bus_address);
-        }
-    }
-
-    return NULL;
-}
-
 // Call with in->lock held
 static void get_current_output_position(struct generic_stream_out *out,
         uint64_t *position, struct timespec * timestamp) {
@@ -520,17 +395,78 @@ static void out_apply_gain(struct generic_stream_out *out, const void *buffer, s
     }
 }
 
+static int out_open_ext_pcm(struct generic_stream_out *out) {
+    unsigned int card = PCM_CARD_DEFAULT;
+    unsigned int device = PCM_DEVICE_OUT;
+    unsigned int flags = PCM_OUT | PCM_MONOTONIC;
+
+#ifdef GEN3_HFP_SUPPORT
+    if (out->device == AUDIO_DEVICE_OUT_BLUETOOTH_SCO) {
+        card = PCM_CARD_HFP;
+        device = PCM_DEVICE_HFP;
+        flags = PCM_OUT;
+        out->ext_pcm = ext_pcm_open_hfp(card, device, flags, &out->pcm_config);
+    } else
+#endif
+        out->ext_pcm = ext_pcm_open_default(card, device, flags, &out->pcm_config);
+
+    if (!ext_pcm_is_ready(out->ext_pcm)) {
+        ALOGE("pcm_open(out) failed: %s: address %s channels %d format %d rate %d period size %d",
+                ext_pcm_get_error(out->ext_pcm),
+                out->bus_address,
+                out->pcm_config.channels,
+                out->pcm_config.format,
+                out->pcm_config.rate,
+                out->pcm_config.period_size);
+        ext_pcm_close(out->ext_pcm, out->bus_address);
+        out->ext_pcm = NULL;
+        return -EINVAL;
+    }
+
+    out->write_bus = ext_pcm_get_write_bus(out->ext_pcm, out->bus_address);
+    return 0;
+}
+
+static size_t out_write_to_ext_pcm(struct generic_stream_out *out, const void *buffer, size_t frames) {
+    void *output_buffer;
+    size_t frames_written;
+
+    if (out->resampler) {
+        size_t in_frames_count = frames;
+        size_t out_frames_count = (frames * out->pcm_config.rate) / out->req_config.sample_rate;
+        out->resampler->resample_from_input(out->resampler, (int16_t*)buffer, &in_frames_count,
+                                            (int16_t*)out->resampler_buffer, &out_frames_count);
+        output_buffer = out->resampler_buffer;
+        frames = out_frames_count;
+    } else {
+        output_buffer = (void*)buffer;
+    }
+
+    frames_written = ext_pcm_write_bus(out->write_bus, output_buffer, frames);
+    if (!frames_written) {
+        if(!ext_pcm_is_ready(out->ext_pcm)) {
+            ALOGE("pcm_write failed %s address %s", ext_pcm_get_error(out->ext_pcm), out->bus_address);
+        } else {
+            ALOGW("pcm_write overrun (%zu/%zu frames written)", frames_written, frames);
+        }
+    } else {
+        ALOGV("pcm_write succeed address %s", out->bus_address);
+    }
+
+    return frames_written;
+}
+
+static void out_close_ext_pcm(struct generic_stream_out *out) {
+    out->write_bus = NULL;
+    ext_pcm_close(out->ext_pcm, out->bus_address); // Frees pcm
+    out->ext_pcm = NULL;
+}
+
 static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, size_t bytes) {
     struct generic_stream_out *out = (struct generic_stream_out *)stream;
     const size_t frames =  bytes / audio_stream_out_frame_size(stream);
-
-    ALOGV("%s: bytes %zu, frames %zu", __func__, bytes, frames);
+    ALOGV("%s: bus %s (%zu)", __func__, out->bus_address, bytes);
     pthread_mutex_lock(&out->lock);
-
-    if (out->worker_standby) {
-        out->worker_standby = false;
-    }
-    pthread_cond_signal(&out->worker_wake);
 
     uint64_t current_position;
     struct timespec current_time;
@@ -539,10 +475,22 @@ static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, si
     const uint64_t now_us = (current_time.tv_sec * 1000000000LL +
                              current_time.tv_nsec) / 1000;
     if (out->standby) {
+        ALOGI("%s: %s standby off", __func__, out->bus_address);
         out->standby = false;
         out->underrun_time = current_time;
+        out->last_write_time_us = now_us;
         out->frames_rendered = 0;
         out->frames_total_buffered = 0;
+
+        if (!out->ext_pcm && out_open_ext_pcm(out)) {
+            ALOGE("Failed to open output PCM, sound is broken.");
+        }
+    }
+
+    if(!bytes) {
+        ALOGI("wakeup call, buffer is empty");
+        pthread_mutex_unlock(&out->lock);
+        return 0;
     }
 
     //apply gain
@@ -553,8 +501,7 @@ static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, si
     if (out->dev->master_mute) {
         ALOGV("%s: ignored due to master mute", __func__);
     } else {
-        frames_written = audio_vbuffer_write(&out->ringbuffer, buffer, frames);
-        pthread_cond_signal(&out->worker_wake);
+        frames_written = out_write_to_ext_pcm(out, buffer, frames);
     }
 
     /* Implementation just consumes bytes if we start getting backed up */
@@ -567,7 +514,7 @@ static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, si
 
     // At the beginning or after an underrun, try to fill up the vbuffer.
     // This will be throttled by the PlaybackThread
-    int frames_sleep = out->frames_total_buffered < out->ringbuffer.frame_count ? 0 : frames;
+    int frames_sleep = out->frames_total_buffered < out->write_bus->vbuf.frame_count ? 0 : frames;
     uint64_t sleep_time_us = frames_sleep * 1000000LL /
                             out_get_sample_rate(&stream->common);
 
@@ -582,9 +529,10 @@ static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, si
     out->last_write_time_us = now_us + sleep_time_us;
 
     pthread_mutex_unlock(&out->lock);
+    ALOGV("%s: %p sleep time %" PRIu64, __func__, stream, sleep_time_us);
 
     if (sleep_time_us > 0) {
-        usleep(sleep_time_us);
+       usleep(sleep_time_us);
     }
 
     if (frames_written < frames) {
@@ -642,9 +590,8 @@ static void do_out_standby(struct generic_stream_out *out) {
         usleep(sleep_time_us);
         pthread_mutex_lock(&out->lock);
     }
-    out->worker_standby = true;
     out->standby = true;
-    pthread_cond_signal(&out->worker_wake);
+    out_close_ext_pcm(out);
 }
 
 static int out_standby(struct audio_stream *stream) {
@@ -1504,15 +1451,7 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
 
     const size_t format_bytes = pcm_format_to_bits(out->pcm_config.format) >> 3;
     const size_t pcm_frame_size = out->pcm_config.channels * format_bytes;
-    const int requested_channels = popcount(out->req_config.channel_mask);
 
-    ret = audio_vbuffer_init(&out->ringbuffer,
-            out->pcm_config.period_size * out->pcm_config.period_count,
-            requested_channels * format_bytes);
-    if (ret != 0) {
-        ALOGE("%s: audio vbuffer creation failed: %s", __func__, strerror(ret));
-        return ret;
-    }
     // init resampler if necessary
     if (out->pcm_config.rate != out->req_config.sample_rate) {
         const size_t resampler_buffer_frame_count =
@@ -1540,11 +1479,9 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
         out->resampler_buffer = NULL;
     }
 
-    // init thread
-    pthread_cond_init(&out->worker_wake, NULL);
-    out->worker_standby = true;
-    out->worker_exit = false;
-    pthread_create(&out->worker_thread, NULL, out_write_worker, out);
+    // init mixer ptr
+    out->ext_pcm = NULL;
+    out->write_bus = NULL;
 
     // set bus parameters if it is such
     if (devices != AUDIO_DEVICE_OUT_BLUETOOTH_SCO && address) {
@@ -1572,14 +1509,8 @@ static void adev_close_output_stream(struct audio_hw_device *dev,
     ALOGD("%s bus:%s", __func__, out->bus_address);
     pthread_mutex_lock(&out->lock);
     do_out_standby(out);
-
-    out->worker_exit = true;
-    pthread_cond_signal(&out->worker_wake);
     pthread_mutex_unlock(&out->lock);
-
-    pthread_join(out->worker_thread, NULL);
     pthread_mutex_destroy(&out->lock);
-    audio_vbuffer_destroy(&out->ringbuffer);
 
     if (out->bus_address) {
         hashmapRemove(adev->out_bus_stream_map, (void *)out->bus_address);
@@ -1693,9 +1624,6 @@ static void close_hfp_handles(struct generic_audio_device *adev)
     }
 
     if (hfp_out) {
-        pthread_mutex_lock(&hfp_out->lock);
-        hfp_out->worker_standby = true;
-        pthread_mutex_unlock(&hfp_out->lock);
         adev->device.close_output_stream(&adev->device, &hfp_out->stream);
         pthread_mutex_lock(&adev->lock);
         adev->hfp_call.hfp_output = NULL;

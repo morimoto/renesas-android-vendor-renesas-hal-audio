@@ -27,6 +27,7 @@
 
 #include "platform/audio_hal_types.h"
 #include "audio_vbuffer.h"
+#include "ext_pcm.h"
 
 struct hfp_call {
     struct generic_stream_in *mic_input;
@@ -60,7 +61,6 @@ struct generic_stream_out {
   audio_devices_t device;            // Protected by this->lock
   struct audio_config req_config;    // Constant after init
   struct pcm_config pcm_config;      // Constant after init
-  audio_vbuffer_t ringbuffer;        // Protected by this->lock
   char *bus_address;                 // Extended field. Constant after init
   struct audio_gain gain_stage;      // Constant after init
   float amplitude_ratio;             // Protected by this->lock
@@ -74,11 +74,9 @@ struct generic_stream_out {
   uint64_t frames_written;         // Protected by this->lock
   uint64_t frames_rendered;        // Protected by this->lock
 
-  // Worker
-  pthread_t worker_thread;     // Constant after init
-  pthread_cond_t worker_wake;  // Protected by this->lock
-  bool worker_standby;         // Protected by this->lock
-  bool worker_exit;            // Protected by this->lock
+  // Mixer
+  struct ext_pcm* ext_pcm;
+  ext_mixer_bus_t *write_bus;
 
   // Resampling
   struct resampler_itfe *resampler; // Protected by this->lock
