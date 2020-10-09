@@ -209,7 +209,7 @@ static int out_set_sample_rate(struct audio_stream *stream, uint32_t rate) {
 
 static size_t out_get_buffer_size(const struct audio_stream *stream) {
     struct generic_stream_out *out = (struct generic_stream_out *)stream;
-    int size = out->pcm_config.period_size *
+    int size = out->pcm_config.period_size * out->pcm_config.period_count *
                 audio_stream_out_frame_size(&out->stream);
 
     return size;
@@ -340,7 +340,7 @@ static char *out_get_parameters(const struct audio_stream *stream, const char *k
 
 static uint32_t out_get_latency(const struct audio_stream_out *stream) {
     struct generic_stream_out *out = (struct generic_stream_out *)stream;
-    return (out->pcm_config.period_size * 1000) / out->pcm_config.rate;
+    return (out->pcm_config.period_size * out->pcm_config.period_count * 1000) / out->pcm_config.rate;
 }
 
 static int out_set_volume(struct audio_stream_out *stream,
