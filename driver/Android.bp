@@ -32,7 +32,8 @@ audio_hw_cc_defaults {
     srcs: [
         "audio_hw.c",
         "ext_pcm.c",
-        "audio_vbuffer.c"
+        "audio_vbuffer.c",
+        "buffer_utils.c"
     ],
     include_dirs: ["external/tinyalsa/include"],
     shared_libs: [
