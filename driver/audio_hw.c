@@ -351,13 +351,21 @@ static int out_set_volume(struct audio_stream_out *stream,
 // Call with in->lock held
 static void get_current_output_position(struct generic_stream_out *out,
         uint64_t *position, struct timespec * timestamp) {
-    struct timespec curtime = { .tv_sec = 0, .tv_nsec = 0 };
-    clock_gettime(CLOCK_MONOTONIC, &curtime);
-    const int64_t now_us = (curtime.tv_sec * 1000000000LL + curtime.tv_nsec) / 1000;
     if (timestamp) {
-        *timestamp = curtime;
+        clock_gettime(CLOCK_MONOTONIC, timestamp);
     }
+
+    if(position) {
+        *position = out->frames_written;
+    }
+
+}
+
+void detect_underrun(struct generic_stream_out *out, struct timespec *timestamp) {
     int64_t position_since_underrun;
+    uint64_t position_by_time;
+
+    const int64_t now_us = (timestamp->tv_sec * 1000000000LL + timestamp->tv_nsec) / 1000;
     if (out->standby) {
         position_since_underrun = 0;
     } else {
@@ -370,18 +378,18 @@ static void get_current_output_position(struct generic_stream_out *out,
             position_since_underrun = 0;
         }
     }
-    *position = out->underrun_position + position_since_underrun;
+    position_by_time = out->underrun_position + position_since_underrun;
 
     // The device will reuse the same output stream leading to periods of
     // underrun.
-    if (*position > out->frames_written) {
+    if (position_by_time > out->frames_written) {
         ALOGW("Not supplying enough data to HAL, expected position %" PRIu64 " , only wrote "
               "%" PRIu64,
-              *position, out->frames_written);
+              position_by_time, out->frames_written);
 
-        *position = out->frames_written;
-        out->underrun_position = *position;
-        out->underrun_time = curtime;
+        position_by_time = out->frames_written;
+        out->underrun_position = position_by_time;
+        out->underrun_time = *timestamp;
         out->frames_total_buffered = 0;
     }
 }
@@ -468,10 +476,9 @@ static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, si
     ALOGV("%s: bus %s (%zu)", __func__, out->bus_address, bytes);
     pthread_mutex_lock(&out->lock);
 
-    uint64_t current_position;
+    uint64_t last_position;
     struct timespec current_time;
-
-    get_current_output_position(out, &current_position, &current_time);
+    get_current_output_position(out, &last_position, &current_time);
     const uint64_t now_us = (current_time.tv_sec * 1000000000LL +
                              current_time.tv_nsec) / 1000;
     if (out->standby) {
@@ -485,10 +492,12 @@ static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, si
         if (!out->ext_pcm && out_open_ext_pcm(out)) {
             ALOGE("Failed to open output PCM, sound is broken.");
         }
+    } else {
+        detect_underrun(out, &current_time);
     }
 
     if(!bytes) {
-        ALOGI("wakeup call, buffer is empty");
+        ALOGV("wakeup call, buffer is empty");
         pthread_mutex_unlock(&out->lock);
         return 0;
     }
@@ -529,7 +538,6 @@ static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, si
     out->last_write_time_us = now_us + sleep_time_us;
 
     pthread_mutex_unlock(&out->lock);
-    ALOGV("%s: %p sleep time %" PRIu64, __func__, stream, sleep_time_us);
 
     if (sleep_time_us > 0) {
        usleep(sleep_time_us);
@@ -550,10 +558,11 @@ static int out_get_presentation_position(const struct audio_stream_out *stream,
         return -EINVAL;
     }
     struct generic_stream_out *out = (struct generic_stream_out *)stream;
-
     pthread_mutex_lock(&out->lock);
     get_current_output_position(out, frames, timestamp);
     pthread_mutex_unlock(&out->lock);
+
+    ALOGV("%s:%s: pos %zu", __func__, out->bus_address, (size_t)*frames);
 
     return 0;
 }
@@ -571,27 +580,20 @@ static int out_get_render_position(const struct audio_stream_out *stream, uint32
 
 // Must be called with out->lock held
 static void do_out_standby(struct generic_stream_out *out) {
-    int frames_sleep = 0;
-    uint64_t sleep_time_us = 0;
     if (out->standby) {
         return;
     }
-    while (true) {
-        get_current_output_position(out, &out->underrun_position, NULL);
-        frames_sleep = out->frames_written - out->underrun_position;
-        if (frames_sleep == 0) {
-            break;
-        }
 
-        sleep_time_us = frames_sleep * 1000000LL /
-                        out_get_sample_rate(&out->stream.common);
+    const size_t frames_sleep = out->pcm_config.period_size * out->pcm_config.period_count;
+    const uint64_t sleep_time_us = (frames_sleep * 1000000LL)
+                                / out_get_sample_rate(&out->stream.common);
 
-        pthread_mutex_unlock(&out->lock);
-        usleep(sleep_time_us);
-        pthread_mutex_lock(&out->lock);
-    }
-    out->standby = true;
+    pthread_mutex_unlock(&out->lock);
+    usleep(sleep_time_us);
+    pthread_mutex_lock(&out->lock);
+
     out_close_ext_pcm(out);
+    out->standby = true;
 }
 
 static int out_standby(struct audio_stream *stream) {
