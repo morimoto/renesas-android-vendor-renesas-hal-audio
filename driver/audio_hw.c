@@ -450,7 +450,7 @@ static size_t out_write_to_ext_pcm(struct generic_stream_out *out, const void *b
         output_buffer = (void*)buffer;
     }
 
-    frames_written = ext_pcm_write_bus(out->write_bus, output_buffer, frames);
+    frames_written = audio_vbuffer_write(out->write_bus, output_buffer, frames);
     if (!frames_written) {
         if(!ext_pcm_is_ready(out->ext_pcm)) {
             ALOGE("pcm_write failed %s address %s", ext_pcm_get_error(out->ext_pcm), out->bus_address);
@@ -523,7 +523,7 @@ static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, si
 
     // At the beginning or after an underrun, try to fill up the vbuffer.
     // This will be throttled by the PlaybackThread
-    int frames_sleep = out->frames_total_buffered < out->write_bus->vbuf.frame_count ? 0 : frames;
+    int frames_sleep = out->frames_total_buffered < out->write_bus->frame_count ? 0 : frames;
     uint64_t sleep_time_us = frames_sleep * 1000000LL /
                             out_get_sample_rate(&stream->common);
 

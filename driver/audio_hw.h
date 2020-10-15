@@ -76,7 +76,7 @@ struct generic_stream_out {
 
   // Mixer
   struct ext_pcm* ext_pcm;
-  ext_mixer_bus_t *write_bus;
+  audio_vbuffer_t *write_bus;
 
   // Resampling
   struct resampler_itfe *resampler; // Protected by this->lock

@@ -121,14 +121,13 @@ static void mixer_close_pcm(struct ext_mixer_thread *mixer) {
   free(mixer->write_buffer);
 }
 
-static int mixer_init_bus(struct ext_mixer_thread *mixer, ext_mixer_bus_t **bus) {
-  ext_mixer_bus_t *new_bus = calloc(1, sizeof(*new_bus));
+static int mixer_init_bus(struct ext_mixer_thread *mixer, audio_vbuffer_t **bus) {
+  audio_vbuffer_t *new_bus = calloc(1, sizeof(*new_bus));
   if(!new_bus) {
     return -EINVAL;
   }
 
-  new_bus->thread_notify = &mixer->thread_notify;
-  int err = audio_vbuffer_init(&new_bus->vbuf,
+  int err = audio_vbuffer_init(new_bus,
                                mixer->bus_conf.frame_count,
                                mixer->bus_conf.frame_size);
   if(err) {
@@ -140,10 +139,9 @@ static int mixer_init_bus(struct ext_mixer_thread *mixer, ext_mixer_bus_t **bus)
   return 0;
 }
 
-static ext_mixer_bus_t *get_mixer_write_bus(struct ext_pcm *ext_pcm, const char *bus_address) {
+static audio_vbuffer_t *get_mixer_write_bus(struct ext_pcm *ext_pcm, const char *bus_address) {
   pthread_mutex_lock(&ext_pcm->mixer.bus_map_lock);
-  ext_mixer_bus_t *bus = (ext_mixer_bus_t *) hashmapGet(ext_pcm->mixer.bus_map,
-                                                        (void*)bus_address);
+  audio_vbuffer_t *bus = (audio_vbuffer_t *) hashmapGet(ext_pcm->mixer.bus_map, (void*)bus_address);
   if (!bus) {
     if(mixer_init_bus(&ext_pcm->mixer, &bus)) {
       LOG_ALWAYS_FATAL("mixer: could not allocate bus");
@@ -157,39 +155,11 @@ static ext_mixer_bus_t *get_mixer_write_bus(struct ext_pcm *ext_pcm, const char 
 
 static void remove_mixer_write_bus(struct ext_pcm *ext_pcm, const char *bus_address) {
   pthread_mutex_lock(&ext_pcm->mixer.bus_map_lock);
-  ext_mixer_bus_t *removed_bus = (ext_mixer_bus_t *) hashmapRemove(ext_pcm->mixer.bus_map,
+  audio_vbuffer_t *removed_bus = (audio_vbuffer_t *) hashmapRemove(ext_pcm->mixer.bus_map,
                                                                    (void *)bus_address);
   pthread_mutex_unlock(&ext_pcm->mixer.bus_map_lock);
-  audio_vbuffer_destroy(removed_bus->vbuf);
+  audio_vbuffer_destroy(removed_bus);
   free(removed_bus);
-}
-
-static size_t mixer_bus_write(ext_mixer_bus_t *bus, const void *data, size_t frames) {
-  audio_vbuffer_t *vbuf = &bus->vbuf;
-  size_t frames_written = audio_vbuffer_write(vbuf, data, frames);
-  atomic_flag_clear_explicit(bus->thread_notify, memory_order_relaxed);
-
-  if(frames_written < frames) {
-    ALOGW("mixer: bus overrun (%zu/%zu frames written)", frames_written, frames);
-  }
-
-  return frames_written;
-}
-
-static size_t mixer_bus_read(ext_mixer_bus_t *bus, void *buffer, size_t frames) {
-  LOG_FATAL_IF(!buffer, "%s: read buffer is NULL", __func__);
-
-  audio_vbuffer_t *vbuf = &bus->vbuf;
-  size_t frames_read = audio_vbuffer_read(vbuf, buffer, frames);
-  if(frames_read < frames) {
-    ALOGW("mixer: bus underrun (%zu/%zu frames read)", frames_read, frames);
-
-    int bytes_read = frames_read * vbuf->frame_size;
-    int bytes = frames * vbuf->frame_size;
-    memset(&((uint8_t *)buffer)[bytes_read], 0, bytes - bytes_read);
-  }
-
-  return frames_read;
 }
 
 static bool mixer_calc_mix_position(__unused void *key, void *value, void *context) {
@@ -204,9 +174,9 @@ static bool mixer_calc_mix_position(__unused void *key, void *value, void *conte
 
 static bool mixer_thread_mix_int16(__unused void *key, void *value, void *context) {
   struct ext_mixer_thread *mixer = (struct ext_mixer_thread *)context;
+  audio_vbuffer_t *bus = (audio_vbuffer_t *)value;
 
-  size_t read_frames = mixer_bus_read((ext_mixer_bus_t *)value, mixer->read_buffer,
-                                      mixer->mixed_frames);
+  size_t read_frames = audio_vbuffer_read(bus, mixer->read_buffer, mixer->mixed_frames);
   // read_frames should not be less than mixer->mixed_frames unless
   // the bus was empty (e.g. before writing started)
   if(read_frames) {
@@ -237,24 +207,7 @@ static void *mixer_thread_loop(void *context) {
 
   const size_t mixed_frames_max = pcm_get_buffer_size(mixer->pcm);
 
-  const long sleep_time_ns = (mixer->pcm_conf.config.period_size * 1000000000LL)
-                             / mixer->pcm_conf.config.rate;
-  const struct timespec mixer_sleep_ts = { .tv_nsec = sleep_time_ns };
-
-  bool mixer_exit = false;
-
-  while (!mixer_exit) {
-    // wait for notification for write or exit
-    while(atomic_flag_test_and_set_explicit(&mixer->thread_notify,
-                                            memory_order_acquire)) {
-      clock_nanosleep(CLOCK_MONOTONIC, 0, &mixer_sleep_ts, NULL);
-    }
-
-    if(atomic_load_explicit(&mixer->do_exit, memory_order_relaxed)) {
-      ALOGE("%s mixer exiting...", __func__);
-      mixer_exit = true;
-    }
-
+  while (!atomic_load_explicit(&mixer->do_exit, memory_order_relaxed)) {
     mixer->mixed_frames = mixed_frames_max;
 
     // calculate bus position for mix and
@@ -267,7 +220,7 @@ static void *mixer_thread_loop(void *context) {
 
     size_t mixed_bytes = mixer_in_frames_to_bytes(mixer, mixer->mixed_frames);
 
-    // write result
+    // write result (blocking)
     if(mixer->pcm_write(mixer, mixed_bytes)) {
         atomic_store_explicit(&mixer->error, -1, memory_order_relaxed);
         ALOGE("%s: pcm_write failed %s", __func__, pcm_get_error(mixer->pcm));
@@ -351,7 +304,6 @@ static void ext_pcm_init(struct ext_pcm** ext_pcm, int bus_count,
   }
 
   // set thread flags
-  atomic_flag_test_and_set_explicit(&new_ext_pcm->mixer.thread_notify, memory_order_relaxed);
   atomic_init(&new_ext_pcm->mixer.do_exit, 0);
   atomic_init(&new_ext_pcm->mixer.error, 0);
   atomic_init(&new_ext_pcm->mixer.pcm_init_done, 0);
@@ -388,7 +340,8 @@ struct ext_pcm *ext_pcm_open_hfp(unsigned int card, unsigned int device,
 }
 
 static bool mixer_free_bus(__unused void *key, void *value, void *context) {
-  ext_mixer_bus_t *bus = (ext_mixer_bus_t *)value;
+  audio_vbuffer_t *bus = (audio_vbuffer_t *)value;
+  audio_vbuffer_destroy(bus);
   free(bus);
   return true;
 }
@@ -405,7 +358,6 @@ int ext_pcm_close(struct ext_pcm *ext_pcm, const char *bus_address) {
   if (ref_count <= 1) {
     // stop thread
     atomic_store_explicit(&ext_pcm->mixer.do_exit, 1, memory_order_relaxed);
-    atomic_flag_clear_explicit(&ext_pcm->mixer.thread_notify, memory_order_release);
     pthread_join(ext_pcm->mixer.thread, NULL);
 
     // clean map contents and destroy it
@@ -434,21 +386,12 @@ int ext_pcm_is_ready(struct ext_pcm *ext_pcm) {
   return !atomic_load_explicit(&ext_pcm->mixer.error, memory_order_relaxed);
 }
 
-ext_mixer_bus_t *ext_pcm_get_write_bus(struct ext_pcm *ext_pcm, const char *bus_address) {
+audio_vbuffer_t *ext_pcm_get_write_bus(struct ext_pcm *ext_pcm, const char *bus_address) {
   if (ext_pcm == NULL) {
     return NULL;
   }
 
   return get_mixer_write_bus(ext_pcm, bus_address);
-}
-
-size_t ext_pcm_write_bus(ext_mixer_bus_t *ext_pcm_bus,
-                      const void *data, size_t frames) {
-  if (ext_pcm_bus == NULL) {
-    return 0;
-  }
-
-  return mixer_bus_write(ext_pcm_bus, data, frames);
 }
 
 const char *ext_pcm_get_error(struct ext_pcm *ext_pcm) {

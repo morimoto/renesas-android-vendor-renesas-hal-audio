@@ -28,17 +28,12 @@
 
 #include "audio_vbuffer.h"
 
-typedef struct ext_mixer_bus {
-  audio_vbuffer_t vbuf;
-  atomic_flag *thread_notify;
-} ext_mixer_bus_t;
-
 struct ext_mixer_thread {
   pthread_t thread;
   Hashmap *bus_map;
   pthread_mutex_t bus_map_lock;
-  void *mixed_buffer; // ext_mixer_bus format
-  void *read_buffer; // ext_mixer_bus format
+  void *mixed_buffer; // audio_vbuffer format
+  void *read_buffer; // audio_vbuffer format
   void *write_buffer; // PCM format (if different)
   size_t mixed_frames;
   struct pcm *pcm;
@@ -75,8 +70,8 @@ struct ext_pcm *ext_pcm_open_hfp(unsigned int card, unsigned int device,
 int ext_pcm_close(struct ext_pcm *ext_pcm, const char *bus_address);
 int ext_pcm_is_ready(struct ext_pcm *ext_pcm);
 
-ext_mixer_bus_t *ext_pcm_get_write_bus(struct ext_pcm *ext_pcm, const char *bus_address);
-size_t ext_pcm_write_bus(ext_mixer_bus_t *ext_pcm_bus,
+audio_vbuffer_t *ext_pcm_get_write_bus(struct ext_pcm *ext_pcm, const char *bus_address);
+size_t ext_pcm_write_bus(audio_vbuffer_t *ext_pcm_bus,
                          const void *data, size_t count);
 
 const char *ext_pcm_get_error(struct ext_pcm *ext_pcm);
