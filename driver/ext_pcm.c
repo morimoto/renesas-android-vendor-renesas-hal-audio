@@ -58,7 +58,7 @@ static int str_hash_fn(void *str) {
 }
 
 // pcm macros for struct ext_mixer_thread *
-static const size_t mixer_pcm_buffer_count = 3;
+static const size_t mixer_pcm_buffer_count = 4;
 #define mixer_frame_count(mixer) \
   ((size_t) ((mixer)->pcm_conf.config.period_size * (mixer)->pcm_conf.config.period_count * mixer_pcm_buffer_count))
 
@@ -176,7 +176,7 @@ static bool mixer_thread_mix_int16(__unused void *key, void *value, void *contex
   struct ext_mixer_thread *mixer = (struct ext_mixer_thread *)context;
   audio_vbuffer_t *bus = (audio_vbuffer_t *)value;
 
-  size_t read_frames = audio_vbuffer_read(bus, mixer->read_buffer, mixer->mixed_frames);
+  size_t read_frames = audio_vbuffer_read_notify(bus, mixer->read_buffer, mixer->mixed_frames);
   // read_frames should not be less than mixer->mixed_frames unless
   // the bus was empty (e.g. before writing started)
   if(read_frames) {
@@ -228,6 +228,7 @@ static void *mixer_thread_loop(void *context) {
     }
 
     memset(mixer->mixed_buffer, 0, mixed_bytes);
+
   }
 
   mixer_close_pcm(mixer);

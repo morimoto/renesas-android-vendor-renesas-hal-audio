@@ -26,8 +26,8 @@
 #include "audio_vbuffer.h"
 #include "buffer_utils.h"
 
-size_t vbuf_writable_frames(size_t head, size_t tail,
-                            size_t bytes, size_t frame_size) {
+static size_t vbuf_writable_frames(size_t head, size_t tail,
+                                   size_t bytes, size_t frame_size) {
   size_t res;
   if(head >= tail) {
     res = (tail + bytes) - head - 1;
@@ -38,8 +38,8 @@ size_t vbuf_writable_frames(size_t head, size_t tail,
   return res / frame_size;
 }
 
-size_t vbuf_readable_frames(size_t head, size_t tail,
-                            size_t bytes, size_t frame_size) {
+static size_t vbuf_readable_frames(size_t head, size_t tail,
+                                   size_t bytes, size_t frame_size) {
   size_t res;
   if(head >= tail) {
     res = head - tail;
@@ -50,48 +50,10 @@ size_t vbuf_readable_frames(size_t head, size_t tail,
   return res / frame_size;
 }
 
-int audio_vbuffer_init(audio_vbuffer_t *audio_vbuffer, size_t frame_count,
-                       size_t frame_size) {
-  if (!audio_vbuffer) {
-    return -EINVAL;
-  }
-
-  audio_vbuffer->frame_size = frame_size;
-  audio_vbuffer->frame_count = frame_count;
-  size_t bytes = (frame_count * frame_size) + 1;
-  audio_vbuffer->data = (uint8_t *) calloc(bytes, 1);
-  if (!audio_vbuffer->data) {
-    return -ENOMEM;
-  }
-  audio_vbuffer->buffer_size = bytes;
-  atomic_init(&audio_vbuffer->head, 0);
-  atomic_init(&audio_vbuffer->tail, 0);
-  return 0;
-}
-
-int audio_vbuffer_destroy(audio_vbuffer_t *audio_vbuffer) {
-  if (!audio_vbuffer) {
-    return -EINVAL;
-  }
-  free(audio_vbuffer->data);
-  return 0;
-}
-
-int audio_vbuffer_live(audio_vbuffer_t *audio_vbuffer) {
-  if (!audio_vbuffer) {
-    return -EINVAL;
-  }
-  size_t tail = atomic_load_explicit(&audio_vbuffer->tail, memory_order_relaxed);
-  size_t head = atomic_load_explicit(&audio_vbuffer->head, memory_order_acquire);
-
-  return vbuf_readable_frames(head, tail, audio_vbuffer->buffer_size,
-                              audio_vbuffer->frame_size);
-}
-
-size_t audio_vbuffer_write(audio_vbuffer_t *audio_vbuffer, const void *buffer,
+static size_t vbuf_write_impl(audio_vbuffer_t *audio_vbuffer, const void *buffer,
                            const size_t frame_count) {
-  size_t head = atomic_load_explicit(&audio_vbuffer->head, memory_order_relaxed);
-  size_t tail = atomic_load_explicit(&audio_vbuffer->tail, memory_order_acquire);
+  size_t head = audio_vbuffer->head;
+  size_t tail = audio_vbuffer->tail;
   size_t byte_count = frame_count * audio_vbuffer->frame_size;
 
   if(frame_count > vbuf_writable_frames(head, tail, audio_vbuffer->buffer_size,
@@ -116,14 +78,14 @@ size_t audio_vbuffer_write(audio_vbuffer_t *audio_vbuffer, const void *buffer,
     }
   }
 
-  atomic_store_explicit(&audio_vbuffer->head, next_head, memory_order_release);
+  audio_vbuffer->head = next_head;
   return frame_count;
 }
 
-size_t audio_vbuffer_read(audio_vbuffer_t *audio_vbuffer, void *buffer,
-                          const size_t frame_count) {
-  size_t tail = atomic_load_explicit(&audio_vbuffer->tail, memory_order_relaxed);
-  size_t head = atomic_load_explicit(&audio_vbuffer->head, memory_order_acquire);
+static size_t vbuf_read_impl(audio_vbuffer_t *audio_vbuffer, void *buffer,
+                             const size_t frame_count) {
+  size_t tail = audio_vbuffer->tail;
+  size_t head = audio_vbuffer->head;
   size_t byte_count = frame_count * audio_vbuffer->frame_size;
 
   if(frame_count > vbuf_readable_frames(head, tail, audio_vbuffer->buffer_size,
@@ -148,6 +110,92 @@ size_t audio_vbuffer_read(audio_vbuffer_t *audio_vbuffer, void *buffer,
     }
   }
 
-  atomic_store_explicit(&audio_vbuffer->tail, next_tail, memory_order_release);
+  audio_vbuffer->tail = next_tail;
   return frame_count;
+}
+
+int audio_vbuffer_init(audio_vbuffer_t *audio_vbuffer, size_t frame_count,
+                       size_t frame_size) {
+  if (!audio_vbuffer) {
+    return -EINVAL;
+  }
+
+  audio_vbuffer->frame_size = frame_size;
+  audio_vbuffer->frame_count = frame_count;
+  size_t bytes = (frame_count * frame_size) + 1;
+  audio_vbuffer->data = (uint8_t *) calloc(bytes, 1);
+  if (!audio_vbuffer->data) {
+    return -ENOMEM;
+  }
+  audio_vbuffer->buffer_size = bytes;
+  audio_vbuffer->head = 0;
+  audio_vbuffer->tail = 0;
+  pthread_mutex_init(&audio_vbuffer->lock, NULL);
+  pthread_cond_init(&audio_vbuffer->has_free, NULL);
+
+  return 0;
+}
+
+int audio_vbuffer_destroy(audio_vbuffer_t *audio_vbuffer) {
+  if (!audio_vbuffer) {
+    return -EINVAL;
+  }
+  free(audio_vbuffer->data);
+
+  pthread_mutex_destroy(&audio_vbuffer->lock);
+  pthread_cond_destroy(&audio_vbuffer->has_free);
+  return 0;
+}
+
+int audio_vbuffer_live(audio_vbuffer_t *audio_vbuffer) {
+  if (!audio_vbuffer) {
+    return -EINVAL;
+  }
+  pthread_mutex_lock(&audio_vbuffer->lock);
+  size_t tail = audio_vbuffer->tail;
+  size_t head = audio_vbuffer->head;
+  pthread_mutex_unlock(&audio_vbuffer->lock);
+
+  return vbuf_readable_frames(head, tail, audio_vbuffer->buffer_size,
+                              audio_vbuffer->frame_size);
+}
+
+size_t audio_vbuffer_write(audio_vbuffer_t *audio_vbuffer, const void *buffer,
+                           const size_t frame_count) {
+  pthread_mutex_lock(&audio_vbuffer->lock);
+  size_t written_frames = vbuf_write_impl(audio_vbuffer, buffer, frame_count);
+  pthread_mutex_unlock(&audio_vbuffer->lock);
+
+  return written_frames;
+}
+
+size_t audio_vbuffer_read(audio_vbuffer_t *audio_vbuffer, void *buffer,
+                          const size_t frame_count) {
+  pthread_mutex_lock(&audio_vbuffer->lock);
+  size_t read_frames = vbuf_read_impl(audio_vbuffer, buffer, frame_count);
+  pthread_mutex_unlock(&audio_vbuffer->lock);
+
+  return read_frames;
+}
+
+size_t audio_vbuffer_read_notify(audio_vbuffer_t *audio_vbuffer, void *buffer, const size_t frame_count) {
+  pthread_mutex_lock(&audio_vbuffer->lock);
+  size_t read_frames = vbuf_read_impl(audio_vbuffer, buffer, frame_count);
+  pthread_mutex_unlock(&audio_vbuffer->lock);
+
+  pthread_cond_signal(&audio_vbuffer->has_free);
+  return read_frames;
+}
+
+size_t audio_vbuffer_write_block(audio_vbuffer_t *audio_vbuffer, const void *buffer, const size_t frame_count) {
+  pthread_mutex_lock(&audio_vbuffer->lock);
+  size_t written_frames = vbuf_write_impl(audio_vbuffer, buffer, frame_count);
+  while(!vbuf_writable_frames(audio_vbuffer->head,
+                              audio_vbuffer->tail,
+                              audio_vbuffer->buffer_size,
+                              audio_vbuffer->frame_size)) {
+    pthread_cond_wait(&audio_vbuffer->has_free, &audio_vbuffer->lock);
+  }
+  pthread_mutex_unlock(&audio_vbuffer->lock);
+  return written_frames;
 }

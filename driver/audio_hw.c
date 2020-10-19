@@ -450,7 +450,7 @@ static size_t out_write_to_ext_pcm(struct generic_stream_out *out, const void *b
         output_buffer = (void*)buffer;
     }
 
-    frames_written = audio_vbuffer_write(out->write_bus, output_buffer, frames);
+    frames_written = audio_vbuffer_write_block(out->write_bus, output_buffer, frames);
     if (!frames_written) {
         if(!ext_pcm_is_ready(out->ext_pcm)) {
             ALOGE("pcm_write failed %s address %s", ext_pcm_get_error(out->ext_pcm), out->bus_address);
@@ -518,30 +518,7 @@ static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, si
     out->frames_rendered += frames;
     out->frames_total_buffered += frames;
 
-    // We simulate the audio device blocking when it's write buffers become
-    // full.
-
-    // At the beginning or after an underrun, try to fill up the vbuffer.
-    // This will be throttled by the PlaybackThread
-    int frames_sleep = out->frames_total_buffered < out->write_bus->frame_count ? 0 : frames;
-    uint64_t sleep_time_us = frames_sleep * 1000000LL /
-                            out_get_sample_rate(&stream->common);
-
-    // If the write calls are delayed, subtract time off of the sleep to
-    // compensate
-    uint64_t time_since_last_write_us = now_us - out->last_write_time_us;
-    if (time_since_last_write_us < sleep_time_us) {
-        sleep_time_us -= time_since_last_write_us;
-    } else {
-        sleep_time_us = 0;
-    }
-    out->last_write_time_us = now_us + sleep_time_us;
-
     pthread_mutex_unlock(&out->lock);
-
-    if (sleep_time_us > 0) {
-       usleep(sleep_time_us);
-    }
 
     if (frames_written < frames) {
         ALOGW("Hardware backing HAL too slow, could only write %zu of %zu frames",

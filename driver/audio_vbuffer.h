@@ -19,7 +19,6 @@
 #define AUDIO_VBUFFER_H
 
 #include <pthread.h>
-#include <stdatomic.h>
 
 // FIFO single producer - single consumer audio ringbuffer
 typedef struct audio_vbuffer {
@@ -27,8 +26,11 @@ typedef struct audio_vbuffer {
   size_t frame_size;
   size_t frame_count;
   size_t buffer_size;
-  _Atomic size_t head;
-  _Atomic size_t tail;
+  size_t head;
+  size_t tail;
+
+  pthread_mutex_t lock;
+  pthread_cond_t has_free;
 } audio_vbuffer_t;
 
 // Initialize a virtual buffer
@@ -45,8 +47,18 @@ int audio_vbuffer_live(audio_vbuffer_t *audio_vbuffer);
 // NOTE: this function assumes input buffer has the same format as vbuffer
 size_t audio_vbuffer_write(audio_vbuffer_t *audio_vbuffer, const void *buffer, const size_t frame_count);
 
+// Write to vbuffer and block until it is ready again
+// NOTE: this function assumes input buffer has the same format as vbuffer
+size_t audio_vbuffer_write_block(audio_vbuffer_t *audio_vbuffer, const void *buffer, const size_t frame_count);
+
 // Read from vbuffer
 // NOTE: this function assumes output buffer has the same format as vbuffer
 size_t audio_vbuffer_read(audio_vbuffer_t *audio_vbuffer, void *buffer, const size_t frame_count);
+
+// Read from vbuffer and notifies to producer
+// NOTE: this function assumes output buffer has the same format as vbuffer
+size_t audio_vbuffer_read_notify(audio_vbuffer_t *audio_vbuffer, void *buffer, const size_t frame_count);
+
+// TODO: blocking read
 
 #endif  // AUDIO_VBUFFER_H
