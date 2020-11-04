@@ -29,6 +29,10 @@
 #include "audio_vbuffer.h"
 #include "ext_pcm.h"
 
+// device specific definitions
+#include "hal_dependencies.h"
+
+#ifdef GEN3_HFP_SUPPORT
 struct hfp_call {
     struct generic_stream_in *mic_input;
     struct generic_stream_in *hfp_input;
@@ -39,6 +43,7 @@ struct hfp_call {
 
     uint8_t stream_flag;
 };
+#endif // GEN3_HFP_SUPPORT
 
 struct generic_audio_device {
   struct audio_hw_device device;  // Constant after init
@@ -48,8 +53,9 @@ struct generic_audio_device {
   struct device_card *device_cards;
   Hashmap *out_bus_stream_map;  // Extended field. Constant after init
   audio_mode_t mode;
-
+#ifdef GEN3_HFP_SUPPORT
   struct hfp_call hfp_call;
+#endif // GEN3_HFP_SUPPORT
 
   int64_t sleep_ms;
 };
@@ -58,9 +64,14 @@ struct generic_stream_out {
   struct audio_stream_out stream;  // Constant after init
   pthread_mutex_t lock;
   struct generic_audio_device *dev;  // Constant after init
-  audio_devices_t device;            // Protected by this->lock
+  audio_devices_t devices;            // Protected by this->lock
   struct audio_config req_config;    // Constant after init
   struct pcm_config pcm_config;      // Constant after init
+  struct stream_card_config {
+    unsigned int card;                 // Constant after init
+    unsigned int device;               // Constant after init
+    unsigned int flags;                // Constant after init
+  } card_config;
   char *bus_address;                 // Extended field. Constant after init
   struct audio_gain gain_stage;      // Constant after init
   float amplitude_ratio;             // Protected by this->lock
@@ -74,9 +85,14 @@ struct generic_stream_out {
   uint64_t frames_written;         // Protected by this->lock
   uint64_t frames_rendered;        // Protected by this->lock
 
-  // Mixer
+#ifndef GEN3_HW_MIXER
+  // SW Mixer
   struct ext_pcm* ext_pcm;
   audio_vbuffer_t *write_bus;
+#else
+  struct pcm *pcm;
+  void *adjust_buffer;
+#endif // GEN3_HW_MIXER
 
   // Resampling
   struct resampler_itfe *resampler; // Protected by this->lock

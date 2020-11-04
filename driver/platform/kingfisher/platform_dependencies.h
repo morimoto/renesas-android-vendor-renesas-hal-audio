@@ -6,6 +6,10 @@
 /* Supported features */
 #define GEN3_HFP_SUPPORT
 #define GEN3_FM_SUPPORT
+#define GEN3_HW_MIXER
+#ifdef ENABLE_ADSP
+  #undef GEN3_HW_MIXER
+#endif // ENABLE_ADSP
 
 #define MIXER_PLAY_VOL_CTRL_TYPE    "DAC Volume Control Type"
 #define MIXER_PLAY_VOL_MASTER       "Master Playback Volume"
@@ -20,27 +24,50 @@
 #define MIXER_CAP_VOL_ADC2          "ADC2 Capture Volume"
 #define MIXER_CAP_VOL_ADC3          "ADC3 Capture Volume"
 
-#define MIXER_DVC_IN_CAPTURE_VOL    "DVC In Capture Volume"
+#define MIXER_DVC1_IN_CAPTURE_VOL    "DVC1 In Capture Volume"
 
 /* GEN3 mixer values */
 #define MIXER_PLAY_V_MASTER_DEF     180
-#define MIXER_PLAY_V_DAC_DEF        160
+#define MIXER_PLAY_V_DAC_DEF        {180, 180}
 
 #define MIXER_CAP_V_MASTER_DEF      230
-#define MIXER_CAP_V_ADC_DEF         230
+#define MIXER_CAP_V_ADC_DEF         {230 , 230}
 
-#define MIXER_DVC_IN_CAP_VOL_DEF    2200000
+#define MIXER_DVC1_IN_CAP_VOL_DEF    2200000
+
+#define MIXER_OUT_RAMP_UP_RATE_DVC0  "DVC0 Out Ramp Up Rate"
+#define MIXER_OUT_RAMP_DOWN_RATE_DVC0 "DVC0 Out Ramp Down Rate"
+#define MIXER_DVC0_OUT_PLAY_VOL "DVC0 Out Playback Volume"
+
+// HW Mixer defines
+#define MIXER_CTU00_PASS "CTU00 Pass"
+#define MIXER_CTU01_PASS "CTU01 Pass"
+#define MIXER_CTU02_PASS "CTU02 Pass"
+#define MIXER_CTU03_PASS "CTU03 Pass"
+
+#define MIXER_OUT_RAMP_UP_RATE_DVC0_DEF 0
+#define MIXER_OUT_RAMP_DOWN_RATE_DVC0_DEF 0
+#define MIXER_DVC0_OUT_PLAY_VOL_DEF {1088607, 1088607, 1088607, 1088607, 1088607, 1088607, 1088607, 1088607}
+#define MIXER_CTU_PASS_DEFAULT {1, 2, 3, 4, 5, 6, 7, 8}
+
+#define MIXER_CTU00_PASS_DEF MIXER_CTU_PASS_DEFAULT
+#define MIXER_CTU01_PASS_DEF MIXER_CTU_PASS_DEFAULT
+#define MIXER_CTU02_PASS_DEF MIXER_CTU_PASS_DEFAULT
+#define MIXER_CTU03_PASS_DEF MIXER_CTU_PASS_DEFAULT
 
 /* ALSA cards for GEN3 */
 #define PCM_CARD_GEN3             0
 
 #ifdef ENABLE_ADSP
-#define PCM_DEVICE_GEN3_OUT       1
-#define PCM_DEVICE_GEN3_IN        0
+  #define PCM_DEVICE_GEN3_OUT       1
+  #define PCM_DEVICE_GEN3_IN        0
 #else
-#define PCM_DEVICE_GEN3_OUT       0
-#define PCM_DEVICE_GEN3_IN        1
-#endif
+  #define PCM_DEVICE_GEN3_OUT_BUS0  0
+  #define PCM_DEVICE_GEN3_OUT_BUS1  1
+  #define PCM_DEVICE_GEN3_OUT_BUS2  2
+  #define PCM_DEVICE_GEN3_IN        3
+  #define PCM_DEVICE_GEN3_OUT       PCM_DEVICE_GEN3_OUT_BUS0
+#endif // ENABLE_ADSP
 
 #define PCM_CARD_DEFAULT          PCM_CARD_GEN3
 #define PCM_DEVICE_OUT            PCM_DEVICE_GEN3_OUT
@@ -72,49 +99,133 @@ static struct route_setting defaults[] = {
     /* playback */
     {
         .ctl_name = MIXER_PLAY_VOL_CTRL_TYPE,
-        .intval = 1, /* Master + Individual */
+        .u = {
+            .intval = 1, /* Master + Individual */
+        },
+        .type = ROUTE_INTVAL,
     },
     {
         .ctl_name = MIXER_PLAY_VOL_MASTER,
-        .intval = MIXER_PLAY_V_MASTER_DEF,
+        .u = {
+            .intval = MIXER_PLAY_V_MASTER_DEF,
+        },
+        .type = ROUTE_INTVAL,
     },
     {
         .ctl_name = MIXER_PLAY_VOL_DAC1,
-        .intval = MIXER_PLAY_V_DAC_DEF,
+        .u = {
+            .intarr = MIXER_PLAY_V_DAC_DEF,
+        },
+        .type = ROUTE_INTARR,
     },
     {
         .ctl_name = MIXER_PLAY_VOL_DAC2,
-        .intval = MIXER_PLAY_V_DAC_DEF,
+        .u = {
+            .intarr = MIXER_PLAY_V_DAC_DEF,
+        },
+        .type = ROUTE_INTARR,
     },
     {
         .ctl_name = MIXER_PLAY_VOL_DAC3,
-        .intval = MIXER_PLAY_V_DAC_DEF,
+        .u = {
+            .intarr = MIXER_PLAY_V_DAC_DEF,
+        },
+        .type = ROUTE_INTARR,
     },
     {
         .ctl_name = MIXER_PLAY_VOL_DAC4,
-        .intval = MIXER_PLAY_V_DAC_DEF,
+        .u = {
+            .intarr = MIXER_PLAY_V_DAC_DEF,
+        },
+        .type = ROUTE_INTARR,
     },
+    {
+        .ctl_name = MIXER_OUT_RAMP_UP_RATE_DVC0,
+        .u = {
+            .intval = MIXER_OUT_RAMP_UP_RATE_DVC0_DEF,
+        },
+        .type = ROUTE_INTVAL,
+    },
+        {
+        .ctl_name = MIXER_OUT_RAMP_DOWN_RATE_DVC0,
+        .u = {
+            .intval = MIXER_OUT_RAMP_DOWN_RATE_DVC0_DEF,
+        },
+        .type = ROUTE_INTVAL,
+    },
+    {
+        .ctl_name = MIXER_DVC0_OUT_PLAY_VOL,
+        .u = {
+            .intarr = MIXER_DVC0_OUT_PLAY_VOL_DEF,
+        },
+        .type = ROUTE_INTARR,
+    },
+#ifdef GEN3_HW_MIXER
+    {
+        .ctl_name = MIXER_CTU00_PASS,
+        .u = {
+            .intarr = MIXER_CTU00_PASS_DEF,
+        },
+        .type = ROUTE_INTARR,
+    },
+    {
+        .ctl_name = MIXER_CTU01_PASS,
+        .u = {
+            .intarr = MIXER_CTU01_PASS_DEF,
+        },
+        .type = ROUTE_INTARR,
+    },
+    {
+        .ctl_name = MIXER_CTU02_PASS,
+        .u = {
+            .intarr = MIXER_CTU02_PASS_DEF,
+        },
+        .type = ROUTE_INTARR,
+    },
+    {
+        .ctl_name = MIXER_CTU03_PASS,
+        .u = {
+            .intarr = MIXER_CTU03_PASS_DEF,
+        },
+        .type = ROUTE_INTARR,
+    },
+#endif // GEN3_HW_MIXER
 
     /* capture */
     {
         .ctl_name = MIXER_CAP_VOL_CTRL_TYPE,
-        .intval = 1, /* Master + Individual */
+        .u = {
+            .intval = 1, /* Master + Individual */
+        },
+        .type = ROUTE_INTVAL,
     },
     {
         .ctl_name = MIXER_CAP_MASTER_VOL,
-        .intval = MIXER_CAP_V_MASTER_DEF,
+        .u = {
+            .intval = MIXER_CAP_V_MASTER_DEF,
+        },
+        .type = ROUTE_INTVAL,
     },
     {
         .ctl_name = MIXER_CAP_VOL_ADC1,
-        .intval = MIXER_CAP_V_ADC_DEF,
+        .u = {
+            .intarr = MIXER_CAP_V_ADC_DEF,
+        },
+        .type = ROUTE_INTARR,
     },
     {
         .ctl_name = MIXER_CAP_VOL_ADC2,
-        .intval = MIXER_CAP_V_ADC_DEF,
+        .u = {
+            .intarr = MIXER_CAP_V_ADC_DEF,
+        },
+        .type = ROUTE_INTARR,
     },
     {
         .ctl_name = MIXER_CAP_VOL_ADC3,
-        .intval = MIXER_CAP_V_ADC_DEF,
+        .u = {
+            .intarr = MIXER_CAP_V_ADC_DEF,
+        },
+        .type = ROUTE_INTARR,
     },
 
     /* end of list */
@@ -123,8 +234,11 @@ static struct route_setting defaults[] = {
 
 static struct route_setting defaultsfm[] = {
     {
-        .ctl_name = MIXER_DVC_IN_CAPTURE_VOL,
-        .intval = MIXER_DVC_IN_CAP_VOL_DEF,
+        .ctl_name = MIXER_DVC1_IN_CAPTURE_VOL,
+        .u = {
+            .intval = MIXER_DVC1_IN_CAP_VOL_DEF,
+        },
+        .type = ROUTE_INTVAL,
     },
 
     /* end of list */
@@ -137,11 +251,13 @@ static struct device_card cards[] = {
         .defaults = defaults,
         .mixer = 0,
     },
+#ifdef GEN3_FM_SUPPORT
     {
         .card = PCM_CARD_GEN3_FM,
         .defaults = defaultsfm,
         .mixer = 0,
     },
+#endif //GEN3_FM_SUPPORT
     {
         .card = UINT32_MAX,
     }

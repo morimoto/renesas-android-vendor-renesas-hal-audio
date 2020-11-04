@@ -50,18 +50,27 @@ static struct route_setting defaults[] = {
     /* general */
     {
         .ctl_name = MIXER_PLAY_VOL,
-        .intval = MIXER_PLAY_V_DEFAULT,
+        .u = {
+            .intval = MIXER_PLAY_V_DEFAULT,
+        },
+        .type = ROUTE_INTVAL,
     },
     {
         .ctl_name = MIXER_CAPTURE_VOL,
-        .intval = MIXER_CAPTURE_V_DEFAULT,
+        .u = {
+            .intval = MIXER_CAPTURE_V_DEFAULT,
+        },
+        .type = ROUTE_INTVAL,
     },
 #ifdef ENABLE_ADSP
     {
         .ctl_name = MIXER_ADSP_PLAY_VOL,
-        .intval = MIXER_ADSP_PLAY_VOL_DEFAULT,
+        .u = {
+            .intval = MIXER_ADSP_PLAY_VOL_DEFAULT,
+        },
+        .type = ROUTE_INTVAL,
     },
-#endif
+#endif //ENABLE_ADSP
     {
         .ctl_name = NULL,
     },

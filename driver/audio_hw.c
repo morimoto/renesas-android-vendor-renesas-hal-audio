@@ -43,8 +43,6 @@
 #include "ext_pcm.h"
 #include "buffer_utils.h"
 
-// device specific definitions
-#include "hal_dependencies.h"
 
 #ifdef GEN3_HFP_SUPPORT
 
@@ -55,8 +53,7 @@
 
 #define HFP_IN_ACTIVE_FLAG 0x1
 #define MIC_IN_ACTIVE_FLAG 0x2
-#define HFP_OUT_ACTIVE_FLAG 0x4
-#define ALL_ACTIVE_FLAG (HFP_IN_ACTIVE_FLAG | MIC_IN_ACTIVE_FLAG | HFP_OUT_ACTIVE_FLAG)
+#define ALL_ACTIVE_FLAG (HFP_IN_ACTIVE_FLAG | MIC_IN_ACTIVE_FLAG)
 #endif
 
 #define _bool_str(x) ((x)?"true":"false")
@@ -126,31 +123,36 @@ struct listnode* patch_head = NULL;
 static int set_route_by_array(struct mixer *mixer, struct route_setting *route,
                               int enable)
 {
-    struct mixer_ctl *ctl;
-    unsigned int i, j;
-
     /* Go through the route array and set each value */
-    i = 0;
-    while (route[i].ctl_name) {
-        ctl = mixer_get_ctl_by_name(mixer, route[i].ctl_name);
-        if (!ctl)
+    for(unsigned int i = 0; route[i].ctl_name; ++i) {
+        struct mixer_ctl *ctl = mixer_get_ctl_by_name(mixer, route[i].ctl_name);
+        if (!ctl) {
+            ALOGE("%s: no mixer ctl with name %s", __func__, route[i].ctl_name);
             return -EINVAL;
+        }
 
-        if (route[i].strval) {
+        switch (route[i].type) {
+        case ROUTE_STRVAL:
             if (enable)
-                mixer_ctl_set_enum_by_string(ctl, route[i].strval);
+                mixer_ctl_set_enum_by_string(ctl, route[i].u.strval);
             else
                 mixer_ctl_set_enum_by_string(ctl, "Off");
-        } else {
-            /* This ensures multiple (i.e. stereo) values are set jointly */
-            for (j = 0; j < mixer_ctl_get_num_values(ctl); j++) {
+        case ROUTE_INTVAL:
+            if (enable)
+                mixer_ctl_set_value(ctl, 0, route[i].u.intval);
+            else
+                mixer_ctl_set_value(ctl, 0, 0);
+        case ROUTE_INTARR:
+            LOG_FATAL_IF(mixer_ctl_get_num_values(ctl) > ROUTE_INTARR_MAX);
+            for (unsigned int j = 0; j < mixer_ctl_get_num_values(ctl); ++j) {
                 if (enable)
-                    mixer_ctl_set_value(ctl, j, route[i].intval);
+                    mixer_ctl_set_value(ctl, j, route[i].u.intarr[j]);
                 else
                     mixer_ctl_set_value(ctl, j, 0);
             }
+        default:
+            LOG_FATAL("Invalid configuration for %s", route[i].ctl_name);
         }
-        i++;
     }
 
     return 0;
@@ -246,7 +248,7 @@ static int out_dump(const struct audio_stream *stream, int fd) {
                 out_get_buffer_size(stream),
                 out_get_channels(stream),
                 out_get_format(stream),
-                out->device,
+                out->devices,
                 out->amplitude_ratio,
                 out->dev);
     pthread_mutex_unlock(&out->lock);
@@ -272,7 +274,7 @@ static int out_set_parameters(struct audio_stream *stream, const char *kvpairs) 
             errno = 0;
             val = strtol(value, &end, 10);
             if (errno == 0 && (end != NULL) && (*end == '\0') && ((int)val == val)) {
-                out->device = (int)val;
+                out->devices = (int)val;
             } else {
                 ret = -EINVAL;
             }
@@ -306,7 +308,7 @@ static char *out_get_parameters(const struct audio_stream *stream, const char *k
     if (str_parms_get_str(query, AUDIO_PARAMETER_STREAM_ROUTING,
             value, sizeof(value)) >= 0) {
         pthread_mutex_lock(&out->lock);
-        str_parms_add_int(reply, AUDIO_PARAMETER_STREAM_ROUTING, out->device);
+        str_parms_add_int(reply, AUDIO_PARAMETER_STREAM_ROUTING, out->devices);
         pthread_mutex_unlock(&out->lock);
         str = strdup(str_parms_to_str(reply));
     } else if (str_parms_get_str(query, AUDIO_PARAMETER_STREAM_SUP_SAMPLING_RATES,
@@ -403,20 +405,12 @@ static void out_apply_gain(struct generic_stream_out *out, const void *buffer, s
     }
 }
 
-static int out_open_ext_pcm(struct generic_stream_out *out) {
-    unsigned int card = PCM_CARD_DEFAULT;
-    unsigned int device = PCM_DEVICE_OUT;
-    unsigned int flags = PCM_OUT | PCM_MONOTONIC;
-
-#ifdef GEN3_HFP_SUPPORT
-    if (out->device == AUDIO_DEVICE_OUT_BLUETOOTH_SCO) {
-        card = PCM_CARD_HFP;
-        device = PCM_DEVICE_HFP;
-        flags = PCM_OUT;
-        out->ext_pcm = ext_pcm_open_hfp(card, device, flags, &out->pcm_config);
-    } else
-#endif
-        out->ext_pcm = ext_pcm_open_default(card, device, flags, &out->pcm_config);
+#ifndef GEN3_HW_MIXER
+static int out_open_pcm(struct generic_stream_out *out) {
+    out->ext_pcm = ext_pcm_open_default(out->card_config.card,
+                                        out->card_config.device,
+                                        out->card_config.flags,
+                                        &out->pcm_config);
 
     if (!ext_pcm_is_ready(out->ext_pcm)) {
         ALOGE("pcm_open(out) failed: %s: address %s channels %d format %d rate %d period size %d",
@@ -435,27 +429,24 @@ static int out_open_ext_pcm(struct generic_stream_out *out) {
     return 0;
 }
 
-static size_t out_write_to_ext_pcm(struct generic_stream_out *out, const void *buffer, size_t frames) {
+static size_t out_write_to_pcm(struct generic_stream_out *out, const void *buffer, size_t req_frames, size_t *pcm_frames) {
     void *output_buffer;
     size_t frames_written;
 
     if (out->resampler) {
-        size_t in_frames_count = frames;
-        size_t out_frames_count = (frames * out->pcm_config.rate) / out->req_config.sample_rate;
-        out->resampler->resample_from_input(out->resampler, (int16_t*)buffer, &in_frames_count,
-                                            (int16_t*)out->resampler_buffer, &out_frames_count);
+        out->resampler->resample_from_input(out->resampler, (int16_t*)buffer, &req_frames,
+                                            (int16_t*)out->resampler_buffer, pcm_frames);
         output_buffer = out->resampler_buffer;
-        frames = out_frames_count;
     } else {
         output_buffer = (void*)buffer;
     }
 
-    frames_written = audio_vbuffer_write_block(out->write_bus, output_buffer, frames);
+    frames_written = audio_vbuffer_write_block(out->write_bus, output_buffer, *pcm_frames);
     if (!frames_written) {
         if(!ext_pcm_is_ready(out->ext_pcm)) {
             ALOGE("pcm_write failed %s address %s", ext_pcm_get_error(out->ext_pcm), out->bus_address);
         } else {
-            ALOGW("pcm_write overrun (%zu/%zu frames written)", frames_written, frames);
+            ALOGW("pcm_write overrun (%zu/%zu frames written)", frames_written, *pcm_frames);
         }
     } else {
         ALOGV("pcm_write succeed address %s", out->bus_address);
@@ -464,11 +455,70 @@ static size_t out_write_to_ext_pcm(struct generic_stream_out *out, const void *b
     return frames_written;
 }
 
-static void out_close_ext_pcm(struct generic_stream_out *out) {
+static void out_close_pcm(struct generic_stream_out *out) {
     out->write_bus = NULL;
     ext_pcm_close(out->ext_pcm, out->bus_address); // Frees pcm
     out->ext_pcm = NULL;
 }
+#else
+static int out_open_pcm(struct generic_stream_out *out) {
+    out->pcm = pcm_open(out->card_config.card,
+                        out->card_config.device,
+                        out->card_config.flags,
+                        &out->pcm_config);
+
+    if (!pcm_is_ready(out->pcm)) {
+        ALOGE("pcm_open(out) failed: %s: address %s channels %d format %d rate %d period size %d",
+                pcm_get_error(out->pcm),
+                out->bus_address,
+                out->pcm_config.channels,
+                out->pcm_config.format,
+                out->pcm_config.rate,
+                out->pcm_config.period_size);
+        pcm_close(out->pcm);
+        out->pcm = NULL;
+        return -EINVAL;
+    }
+
+    return 0;
+}
+
+static size_t out_write_to_pcm(struct generic_stream_out *out, const void *buffer, size_t req_frames, size_t *pcm_frames) {
+    void *output_buffer;
+    int err;
+
+    if (out->adjust_buffer) {
+        const size_t format_bytes = pcm_format_to_bits(out->pcm_config.format) >> 3;
+        const size_t stream_channels = audio_channel_count_from_out_mask(out->req_config.channel_mask);
+
+        audio_buffer_adjust(out->adjust_buffer, out->pcm_config.channels,
+                            buffer, stream_channels, req_frames, format_bytes);
+        output_buffer = out->adjust_buffer;
+    } else {
+        output_buffer = (void*)buffer;
+    }
+
+    if (out->resampler) {
+        out->resampler->resample_from_input(out->resampler, (int16_t*)output_buffer, &req_frames,
+                                           (int16_t*)out->resampler_buffer, pcm_frames);
+        output_buffer = out->resampler_buffer;
+    }
+
+    err = pcm_write(out->pcm, output_buffer, pcm_frames_to_bytes(out->pcm, *pcm_frames));
+    if (err) {
+        ALOGE("pcm_write failed %s address %s", pcm_get_error(out->pcm), out->bus_address);
+        return 0;
+    }
+
+    ALOGV("pcm_write succeed address %s", out->bus_address);
+    return *pcm_frames;
+}
+
+static void out_close_pcm(struct generic_stream_out *out) {
+    pcm_close(out->pcm);
+    out->pcm = NULL;
+}
+#endif // GEN3_HW_MIXER
 
 static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, size_t bytes) {
     struct generic_stream_out *out = (struct generic_stream_out *)stream;
@@ -489,8 +539,8 @@ static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, si
         out->frames_rendered = 0;
         out->frames_total_buffered = 0;
 
-        if (!out->ext_pcm && out_open_ext_pcm(out)) {
-            ALOGE("Failed to open output PCM, sound is broken.");
+        if (out_open_pcm(out)) {
+            ALOGE("%s: Failed to open output PCM, sound is broken.", out->bus_address);
         }
     } else {
         detect_underrun(out, &current_time);
@@ -502,15 +552,18 @@ static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, si
         return 0;
     }
 
-    //apply gain
+    // apply gain
     out_apply_gain(out, buffer, bytes);
 
+    // calculate pcm frame count for writing
+    size_t pcm_frames = (frames * out->pcm_config.rate) / out->req_config.sample_rate;
+
     // write to vbuffer
-    size_t frames_written = frames;
+    size_t pcm_frames_written = pcm_frames;
     if (out->dev->master_mute) {
         ALOGV("%s: ignored due to master mute", __func__);
     } else {
-        frames_written = out_write_to_ext_pcm(out, buffer, frames);
+        pcm_frames_written = out_write_to_pcm(out, buffer, frames, &pcm_frames);
     }
 
     /* Implementation just consumes bytes if we start getting backed up */
@@ -520,9 +573,9 @@ static ssize_t out_write(struct audio_stream_out *stream, const void *buffer, si
 
     pthread_mutex_unlock(&out->lock);
 
-    if (frames_written < frames) {
+    if (pcm_frames_written < pcm_frames) {
         ALOGW("Hardware backing HAL too slow, could only write %zu of %zu frames",
-                frames_written, frames);
+                pcm_frames_written, pcm_frames);
     }
 
     /* Always consume all bytes */
@@ -569,7 +622,7 @@ static void do_out_standby(struct generic_stream_out *out) {
     usleep(sleep_time_us);
     pthread_mutex_lock(&out->lock);
 
-    out_close_ext_pcm(out);
+    out_close_pcm(out);
     out->standby = true;
 }
 
@@ -1363,6 +1416,13 @@ static int in_get_active_microphones(const struct audio_stream_in *stream,
     return adev_get_microphones( &in->dev->device, mic_array, mic_count);
 }
 
+#ifdef GEN3_HW_MIXER
+static int get_bus_id(const char *bus_address) {
+    // bus_adress is in format bus[id]_[name]
+    return bus_address[3] - '0';
+}
+#endif // GEN3_HW_MIXER
+
 static int adev_open_output_stream(struct audio_hw_device *dev,
         audio_io_handle_t handle, audio_devices_t devices, audio_output_flags_t flags,
         struct audio_config *config, struct audio_stream_out **stream_out, const char *address) {
@@ -1408,7 +1468,7 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
 
     pthread_mutex_init(&out->lock, (const pthread_mutexattr_t *) NULL);
     out->dev = adev;
-    out->device = devices;
+    out->devices = devices;
     memcpy(&out->req_config, config, sizeof(struct audio_config));
 
     if (devices == AUDIO_DEVICE_OUT_BLUETOOTH_SCO) {
@@ -1440,11 +1500,12 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
 
     const size_t format_bytes = pcm_format_to_bits(out->pcm_config.format) >> 3;
     const size_t pcm_frame_size = out->pcm_config.channels * format_bytes;
+    const size_t pcm_frame_count = out->pcm_config.period_size * out->pcm_config.period_count;
 
     // init resampler if necessary
     if (out->pcm_config.rate != out->req_config.sample_rate) {
         const size_t resampler_buffer_frame_count =
-            (out->req_config.sample_rate * out->pcm_config.period_size) / out->pcm_config.rate;
+            (out->req_config.sample_rate * pcm_frame_count) / out->pcm_config.rate;
         const size_t resampler_buffer_bytes = resampler_buffer_frame_count * pcm_frame_size;
 
         out->resampler_buffer = malloc(resampler_buffer_bytes);
@@ -1468,12 +1529,36 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
         out->resampler_buffer = NULL;
     }
 
+#ifdef GEN3_HW_MIXER
+    const size_t stream_channels = audio_channel_count_from_out_mask(out->req_config.channel_mask);
+    if(stream_channels != out->pcm_config.channels) {
+        const int adjust_buffer_bytes = pcm_frame_count * pcm_frame_size * format_bytes;
+        out->adjust_buffer = malloc(adjust_buffer_bytes);
+    } else {
+        out->adjust_buffer = NULL;
+    }
+#endif // GEN3_HW_MIXER
+
     // init mixer ptr
+#ifndef GEN3_HW_MIXER
     out->ext_pcm = NULL;
     out->write_bus = NULL;
+#endif // GEN3_HW_MIXER
 
-    // set bus parameters if it is such
-    if (devices != AUDIO_DEVICE_OUT_BLUETOOTH_SCO && address) {
+    out->card_config.card = PCM_CARD_DEFAULT;
+    out->card_config.device = PCM_DEVICE_OUT;
+    out->card_config.flags = PCM_OUT | PCM_MONOTONIC;
+
+#ifdef GEN3_HFP_SUPPORT
+    if (devices == AUDIO_DEVICE_OUT_BLUETOOTH_SCO) {
+        out->card_config.card = PCM_CARD_HFP;
+        out->card_config.device = PCM_DEVICE_HFP;
+        out->card_config.flags = PCM_OUT;
+    } else
+#endif
+    if (address) {
+        // set bus parameters if it is such
+
         out->bus_address = calloc(strlen(address) + 1, sizeof(char));
         strncpy(out->bus_address, address, strlen(address));
         hashmapPut(adev->out_bus_stream_map, (void *)out->bus_address, out);
@@ -1484,6 +1569,32 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
             .step_value = 100,
         };
         out->amplitude_ratio = 1.0;
+#ifdef GEN3_HW_MIXER
+        // setup mixer devices based on bus ID
+        int bus_id = get_bus_id(out->bus_address);
+        ALOGI("%s bus %s configured as bus%d", __func__, out->bus_address, bus_id);
+        switch(bus_id) {
+        case 0: // bus0_media_out
+            out->card_config.device = PCM_DEVICE_GEN3_OUT_BUS0;
+            break;
+        case 1: // bus1_system_out
+            out->card_config.device = PCM_DEVICE_GEN3_OUT_BUS1;
+            break;
+        case 2: // bus2_navigation_out
+            out->card_config.device = PCM_DEVICE_GEN3_OUT_BUS2;
+            break;
+        case 2: // bus3_call_out
+            out->card_config.device = PCM_DEVICE_GEN3_OUT_BUS3;
+            break;
+# ifdef GEN3_HFP_SUPPORT
+        case 9: // bus9_hfp_call_out
+            out->card_config.device = PCM_DEVICE_GEN3_OUT_BUS1; // call context
+            break;
+# endif //GEN3_HFP_SUPPORT
+        default:
+            ALOGD("unexpected bus id %d", bus_id);
+        }
+#endif // GEN3_HW_MIXER
         ALOGD("%s bus:%s", __func__, out->bus_address);
     }
 
@@ -1514,6 +1625,12 @@ static void adev_close_output_stream(struct audio_hw_device *dev,
         release_resampler(out->resampler);
     }
 
+#ifdef GEN3_HW_MIXER
+    if(out->adjust_buffer) {
+        free(out->adjust_buffer);
+    }
+#endif // GEN3_HW_MIXER
+
     free(stream);
 }
 
@@ -1523,6 +1640,7 @@ static void open_hfp_handles(struct generic_audio_device *adev)
     adev->hfp_call.stream_flag = 0;
 
     if (adev->hfp_call.hfp_input == NULL) {
+        ALOGI("opening HFP handles: %s", "hfp_input");
         struct audio_stream_in *stream_in;
         struct audio_config config = {
                 DEFAULT_IN_SAMPLING_RATE, AUDIO_CHANNEL_IN_STEREO, AUDIO_FORMAT_PCM_16_BIT, {}, IN_PERIOD_SIZE};
@@ -1538,6 +1656,7 @@ static void open_hfp_handles(struct generic_audio_device *adev)
         }
     }
     if (adev->hfp_call.mic_input == NULL) {
+        ALOGV("opening HFP handles: %s", "mic_input");
         struct audio_stream_in *stream_in;
         struct audio_config config = {
                 DEFAULT_IN_SAMPLING_RATE, AUDIO_CHANNEL_IN_STEREO, AUDIO_FORMAT_PCM_16_BIT, {}, IN_PERIOD_SIZE};
@@ -1553,6 +1672,7 @@ static void open_hfp_handles(struct generic_audio_device *adev)
         }
     }
     if (adev->hfp_call.hfp_output == NULL) {
+        ALOGI("opening HFP handles: %s", "hfp_output");
         struct audio_stream_out *stream_out;
         struct audio_config config = {
                 DEFAULT_OUT_SAMPLING_RATE, AUDIO_CHANNEL_OUT_STEREO, AUDIO_FORMAT_PCM_16_BIT, {}, OUT_PERIOD_SIZE};
@@ -1567,6 +1687,7 @@ static void open_hfp_handles(struct generic_audio_device *adev)
         }
     }
     if (adev->hfp_call.headset_output == NULL) {
+        ALOGI("opening HFP handles: %s", "headset_output");
         struct audio_stream_out *stream_out;
         struct audio_config config = {
                 DEFAULT_OUT_SAMPLING_RATE, AUDIO_CHANNEL_OUT_STEREO, AUDIO_FORMAT_PCM_16_BIT, {}, OUT_PERIOD_SIZE};
@@ -1593,6 +1714,7 @@ static void close_hfp_handles(struct generic_audio_device *adev)
     pthread_mutex_unlock(&adev->lock);
 
     if (hfp_in) {
+        ALOGI("closing HFP handles: %s", "hfp_input");
         pthread_mutex_lock(&hfp_in->lock);
         hfp_in->worker_standby = true;
         pthread_mutex_unlock(&hfp_in->lock);
@@ -1603,6 +1725,7 @@ static void close_hfp_handles(struct generic_audio_device *adev)
     }
 
     if (mic) {
+        ALOGI("closing HFP handles: %s", "mic_input");
         pthread_mutex_lock(&mic->lock);
         mic->worker_standby = true;
         pthread_mutex_unlock(&mic->lock);
@@ -1613,6 +1736,7 @@ static void close_hfp_handles(struct generic_audio_device *adev)
     }
 
     if (hfp_out) {
+        ALOGI("closing HFP handles: %s", "hfp_output");
         adev->device.close_output_stream(&adev->device, &hfp_out->stream);
         pthread_mutex_lock(&adev->lock);
         adev->hfp_call.hfp_output = NULL;
@@ -1620,6 +1744,7 @@ static void close_hfp_handles(struct generic_audio_device *adev)
     }
 
     if (stereo_out) {
+        ALOGI("closing HFP handles: %s", "headset_output");
         stereo_out->stream.common.standby(&stereo_out->stream.common);
     }
 }
@@ -2162,6 +2287,10 @@ static int adev_open(const hw_module_t *module,
         goto unlock;
     }
     adev = calloc(1, sizeof(struct generic_audio_device));
+
+#ifdef GEN3_HW_MIXER
+    ALOGI("HW mixer enabled");
+#endif // GEN3_HW_MIXER
 
     pthread_mutex_init(&adev->lock, (const pthread_mutexattr_t *) NULL);
 
