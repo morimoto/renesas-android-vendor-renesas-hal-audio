@@ -1583,9 +1583,6 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
         case 2: // bus2_navigation_out
             out->card_config.device = PCM_DEVICE_GEN3_OUT_BUS2;
             break;
-        case 2: // bus3_call_out
-            out->card_config.device = PCM_DEVICE_GEN3_OUT_BUS3;
-            break;
 # ifdef GEN3_HFP_SUPPORT
         case 9: // bus9_hfp_call_out
             out->card_config.device = PCM_DEVICE_GEN3_OUT_BUS1; // call context

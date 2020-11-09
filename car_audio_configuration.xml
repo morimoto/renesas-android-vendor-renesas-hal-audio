@@ -37,17 +37,13 @@
                         <context context="notification"/>
                         <context context="call_ring"/>
                         <context context="alarm"/>
+                        <context context="call"/>
                     </device>
                 </group>
                 <group>
                     <device address="bus2_navigation_out">
                         <context context="navigation"/>
                         <context context="voice_command"/>
-                    </device>
-                </group>
-                <group>
-                    <device address="bus3_call_out">
-                        <context context="call"/>
                     </device>
                 </group>
             </volumeGroups>

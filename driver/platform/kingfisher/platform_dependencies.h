@@ -43,7 +43,7 @@
 #define MIXER_CTU00_PASS "CTU00 Pass"
 #define MIXER_CTU01_PASS "CTU01 Pass"
 #define MIXER_CTU02_PASS "CTU02 Pass"
-#define MIXER_CTU03_PASS "CTU03 Pass"
+//#define MIXER_CTU03_PASS "CTU03 Pass"
 
 #define MIXER_OUT_RAMP_UP_RATE_DVC0_DEF 0
 #define MIXER_OUT_RAMP_DOWN_RATE_DVC0_DEF 0
@@ -53,7 +53,7 @@
 #define MIXER_CTU00_PASS_DEF MIXER_CTU_PASS_DEFAULT
 #define MIXER_CTU01_PASS_DEF MIXER_CTU_PASS_DEFAULT
 #define MIXER_CTU02_PASS_DEF MIXER_CTU_PASS_DEFAULT
-#define MIXER_CTU03_PASS_DEF MIXER_CTU_PASS_DEFAULT
+//#define MIXER_CTU03_PASS_DEF MIXER_CTU_PASS_DEFAULT
 
 /* ALSA cards for GEN3 */
 #define PCM_CARD_GEN3             0
@@ -182,13 +182,13 @@ static struct route_setting defaults[] = {
         },
         .type = ROUTE_INTARR,
     },
-    {
-        .ctl_name = MIXER_CTU03_PASS,
-        .u = {
-            .intarr = MIXER_CTU03_PASS_DEF,
-        },
-        .type = ROUTE_INTARR,
-    },
+//    {
+//        .ctl_name = MIXER_CTU03_PASS,
+//        .u = {
+//            .intarr = MIXER_CTU03_PASS_DEF,
+//        },
+//        .type = ROUTE_INTARR,
+//    },
 #endif // GEN3_HW_MIXER
 
     /* capture */
