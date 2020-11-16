@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 
+//#define LOG_NDEBUG 0
 #define LOG_TAG "audio_hw_generic"
 
 #include <errno.h>
@@ -58,7 +59,7 @@ static size_t vbuf_write_impl(audio_vbuffer_t *audio_vbuffer, const void *buffer
 
   if(frame_count > vbuf_writable_frames(head, tail, audio_vbuffer->buffer_size,
                                                     audio_vbuffer->frame_size)) {
-    ALOGD("{%s} audio_vbuffer is too full", __func__);
+    ALOGV("{%s} audio_vbuffer is too full", __func__);
     return 0;
   }
 
@@ -90,7 +91,7 @@ static size_t vbuf_read_impl(audio_vbuffer_t *audio_vbuffer, void *buffer,
 
   if(frame_count > vbuf_readable_frames(head, tail, audio_vbuffer->buffer_size,
                                                     audio_vbuffer->frame_size)) {
-    ALOGD("{%s} audio_vbuffer has less frames than needed", __func__);
+    ALOGV("{%s} audio_vbuffer has less frames than needed", __func__);
     return 0;
   }
 

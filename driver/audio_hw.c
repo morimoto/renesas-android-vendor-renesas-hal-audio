@@ -905,9 +905,13 @@ static void *in_read_worker(void *args) {
     struct generic_stream_in *in = (struct generic_stream_in *)args;
     struct pcm *pcm = NULL;
     uint8_t *buffer = NULL;
+    uint8_t *vbuf_buffer = NULL;
     size_t buffer_frames;
+    size_t vbuf_buffer_frames;
     int buffer_size;
     bool close_pcm = false;
+
+    androidSetThreadPriority(gettid(), ANDROID_PRIORITY_URGENT_AUDIO);
 
     while (true) {
         pthread_mutex_lock(&in->lock);
@@ -1003,17 +1007,23 @@ static void *in_read_worker(void *args) {
             size_t out_frames_count = (buffer_frames * in->req_config.sample_rate) / in->pcm_config.rate;
             in->resampler->resample_from_input(in->resampler, (int16_t*)buffer, &in_frames_count,
                                             (int16_t*)in->resampler_buffer, &out_frames_count);
-            frames_written = audio_vbuffer_write(&in->ringbuffer, in->resampler_buffer, out_frames_count);
+
+            vbuf_buffer = in->resampler_buffer;
+            vbuf_buffer_frames = out_frames_count;
         } else {
-            frames_written = audio_vbuffer_write(&in->ringbuffer, buffer, buffer_frames);
+            vbuf_buffer = buffer;
+            vbuf_buffer_frames = buffer_frames;
         }
+
+        frames_written = audio_vbuffer_write(&in->ringbuffer, vbuf_buffer, vbuf_buffer_frames);
+
         pthread_mutex_unlock(&in->lock);
 
         ALOGV("%s: Wrote %zu frames to vbuffer", __func__, frames_written);
 
-        if (frames_written != buffer_frames) {
+        if (frames_written != vbuf_buffer_frames) {
             ALOGW("in_read_worker only could write %zu / %zu frames",
-                    frames_written, buffer_frames);
+                    frames_written, vbuf_buffer_frames);
         }
     }
     return NULL;
