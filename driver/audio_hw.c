@@ -1282,10 +1282,10 @@ static ssize_t in_read(struct audio_stream_in *stream, void *buffer, size_t byte
         read_frames = audio_vbuffer_read(&in->ringbuffer, buffer, frames);
     } else {
         const size_t format_bytes = pcm_format_to_bits(in->pcm_config.format) >> 3;
-        read_frames = audio_vbuffer_read(&in->ringbuffer, &in->adjustment_buffer, frames);
+        read_frames = audio_vbuffer_read(&in->ringbuffer, in->adjustment_buffer, frames);
 
         audio_buffer_adjust(buffer, requested_channels,
-                            &in->adjustment_buffer, in->pcm_config.channels,
+                            in->adjustment_buffer, in->pcm_config.channels,
                             read_frames, format_bytes);
     }
 
