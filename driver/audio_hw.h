@@ -37,7 +37,7 @@ struct hfp_call {
     struct generic_stream_in *mic_input;
     struct generic_stream_in *hfp_input;
     struct generic_stream_out *hfp_output;
-    struct generic_stream_out *headset_output;
+    struct generic_stream_out *speaker_output;
 
     unsigned int hfp_volume;
 

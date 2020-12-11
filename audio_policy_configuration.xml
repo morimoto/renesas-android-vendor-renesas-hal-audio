@@ -53,7 +53,7 @@
                 <!-- One bus per context -->
                 <item>bus0_media_out</item>
                 <item>bus1_system_out</item>
-                <item>bus2_navigation_out</item>
+                <item>bus2_call_out</item>
                 <item>bus0_mic1_in</item>
                 <!-- Test input device port for audio patch -->
                 <item>bus1_audio_patch_test_in</item>
@@ -74,7 +74,7 @@
                              samplingRates="48000"
                              channelMasks="AUDIO_CHANNEL_OUT_STEREO"/>
                 </mixPort>
-                <mixPort name="mixport_bus2_navigation_out" role="source"
+                <mixPort name="mixport_bus2_call_out" role="source"
                         flags="AUDIO_OUTPUT_FLAG_PRIMARY">
                     <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
                              samplingRates="48000"
@@ -124,8 +124,8 @@
                                 minValueMB="-3200" maxValueMB="0" defaultValueMB="-500" stepValueMB="100"/>
                     </gains>
                 </devicePort>
-                <devicePort tagName="bus2_navigation_out" role="sink" type="AUDIO_DEVICE_OUT_BUS"
-                        address="bus2_navigation_out">
+                <devicePort tagName="bus2_call_out" role="sink" type="AUDIO_DEVICE_OUT_BUS"
+                        address="bus2_call_out">
                     <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
                             samplingRates="48000" channelMasks="AUDIO_CHANNEL_OUT_STEREO"/>
                     <gains>
@@ -171,7 +171,7 @@
             <routes>
                 <route type="mix" sink="bus0_media_out" sources="mixport_bus0_media_out"/>
                 <route type="mix" sink="bus1_system_out" sources="mixport_bus1_system_out"/>
-                <route type="mix" sink="bus2_navigation_out" sources="mixport_bus2_navigation_out"/>
+                <route type="mix" sink="bus2_call_out" sources="mixport_bus2_call_out"/>
                 <route type="mix" sink="primary input" sources="Built-In Mic"/>
                 <route type="mix" sink="mixport_bus0_mic1_in" sources="bus0_mic1_in"/>
                 <!--

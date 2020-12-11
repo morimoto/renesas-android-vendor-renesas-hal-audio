@@ -49,7 +49,7 @@
 #define SLEEP_MAX 200000
 #define SLEEP_MS 10000
 
-#define HFP_STREAM_BT_OUT_ADDRESS   "bus9_hfp_call_out"
+#define HFP_STREAM_BT_OUT_ADDRESS   "bus2_call_out"
 
 #define HFP_IN_ACTIVE_FLAG 0x1
 #define MIC_IN_ACTIVE_FLAG 0x2
@@ -1207,7 +1207,7 @@ static void *in_read_worker_bt_call(void *args) {
         }
 
         if (in->device == AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET) {
-            out_stream = (struct generic_stream_out *)&in->dev->hfp_call.headset_output->stream;
+            out_stream = (struct generic_stream_out *)&in->dev->hfp_call.speaker_output->stream;
         } else {
             out_stream = (struct generic_stream_out *)&in->dev->hfp_call.hfp_output->stream;
         }
@@ -1580,14 +1580,9 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
         case 1: // bus1_system_out
             out->card_config.device = PCM_DEVICE_GEN3_OUT_BUS1;
             break;
-        case 2: // bus2_navigation_out
+        case 2: // bus2_call_out
             out->card_config.device = PCM_DEVICE_GEN3_OUT_BUS2;
             break;
-# ifdef GEN3_HFP_SUPPORT
-        case 9: // bus9_hfp_call_out
-            out->card_config.device = PCM_DEVICE_GEN3_OUT_BUS1; // call context
-            break;
-# endif //GEN3_HFP_SUPPORT
         default:
             ALOGD("unexpected bus id %d", bus_id);
         }
@@ -1649,6 +1644,7 @@ static void open_hfp_handles(struct generic_audio_device *adev)
             adev->hfp_call.hfp_input = (struct generic_stream_in*)stream_in;
             pthread_mutex_unlock(&adev->lock);
         } else {
+            ALOGE("failed to open handle %s", "hfp_input");
             return;
         }
     }
@@ -1665,6 +1661,7 @@ static void open_hfp_handles(struct generic_audio_device *adev)
             adev->hfp_call.mic_input = (struct generic_stream_in*)stream_in;
             pthread_mutex_unlock(&adev->lock);
         } else {
+            ALOGE("failed to open handle %s", "mic_input");
             return;
         }
     }
@@ -1680,21 +1677,23 @@ static void open_hfp_handles(struct generic_audio_device *adev)
             adev->hfp_call.hfp_output = (struct generic_stream_out*)stream_out;
             pthread_mutex_unlock(&adev->lock);
         } else {
+            ALOGE("failed to open handle %s", "hfp_output");
             return;
         }
     }
-    if (adev->hfp_call.headset_output == NULL) {
-        ALOGI("opening HFP handles: %s", "headset_output");
-        struct audio_stream_out *stream_out;
-        struct audio_config config = {
-                DEFAULT_OUT_SAMPLING_RATE, AUDIO_CHANNEL_OUT_STEREO, AUDIO_FORMAT_PCM_16_BIT, {}, OUT_PERIOD_SIZE};
-        int res = adev->device.open_output_stream(&adev->device, 0,
-                AUDIO_DEVICE_OUT_BUS, AUDIO_OUTPUT_FLAG_NONE, &config, &stream_out, HFP_STREAM_BT_OUT_ADDRESS);
-        if (res == 0) {
+    if (adev->hfp_call.speaker_output == NULL) {
+        ALOGI("opening HFP handles: %s", "speaker_output");
+
+        // Find output bus stream. Should be open and free to use at this point
+        struct generic_stream_out *hfp_speaker_output_bus = hashmapGet(adev->out_bus_stream_map,
+                                                                      (void *)HFP_STREAM_BT_OUT_ADDRESS);
+
+        if (hfp_speaker_output_bus) {
             pthread_mutex_lock(&adev->lock);
-            adev->hfp_call.headset_output = (struct generic_stream_out*)stream_out;
+            adev->hfp_call.speaker_output = hfp_speaker_output_bus;
             pthread_mutex_unlock(&adev->lock);
         } else {
+            ALOGE("failed to open handle %s", "speaker_output");
             return;
         }
     }
@@ -1706,7 +1705,7 @@ static void close_hfp_handles(struct generic_audio_device *adev)
     struct generic_stream_in *hfp_in = adev->hfp_call.hfp_input;
     struct generic_stream_in *mic = adev->hfp_call.mic_input;
     struct generic_stream_out *hfp_out = adev->hfp_call.hfp_output;
-    struct generic_stream_out *stereo_out = adev->hfp_call.headset_output;
+    struct generic_stream_out *speaker_out = adev->hfp_call.speaker_output;
     adev->hfp_call.stream_flag = 0;
     pthread_mutex_unlock(&adev->lock);
 
@@ -1740,9 +1739,9 @@ static void close_hfp_handles(struct generic_audio_device *adev)
         pthread_mutex_unlock(&adev->lock);
     }
 
-    if (stereo_out) {
-        ALOGI("closing HFP handles: %s", "headset_output");
-        stereo_out->stream.common.standby(&stereo_out->stream.common);
+    if (speaker_out) {
+        ALOGI("closing HFP handles: %s", "speaker_output");
+        speaker_out->stream.common.standby(&speaker_out->stream.common);
     }
 }
 
